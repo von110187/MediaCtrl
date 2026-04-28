@@ -21,7 +21,8 @@ global State := {
     matchedSite: "",
 
     ; browser media state
-    browserIsPlaying:    false,
+    browserIsPlaying:        false,
+    browserPlaybackStatus:   0,     ; last known PlaybackStatus for the browser session
 
     ; Debounce counter — how many consecutive ticks browser has reported not-playing.
     ; We only commit the state change after CHROME_STOP_DEBOUNCE ticks to avoid latency glitches.

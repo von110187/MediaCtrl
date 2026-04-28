@@ -77,17 +77,17 @@ $AppsKey:: {
     Run('"D:\Program Files\Epic Games\ZenlessZoneZero\games\ZenlessZoneZero Game\ZenlessZoneZero.exe"')
 }
 
-; ── LButton: exit fullscreen when browser stops playing ───────────────────────
-; If playing: mark pending, exit will fire once audio stops.
-; If not playing: exit immediately.
+; ── LButton: exit fullscreen when a click pauses browser playback ─────────────
+; Only acts when already in fullscreen and browser was playing (status = 4).
+; Mirrors _HK_b: arms pendingExitFS so _EvalVideoHotkeys exits once audio stops.
+; No direct _ExitFullscreenByUser() call — avoids races with the event path.
 ~LButton:: {
     global State
     if !State.browserInFullScreen
         return
-    if State.browserIsPlaying
-        State.pendingExitFS := true
-    else
-        _ExitFullscreenByUser()
+    if State.browserPlaybackStatus != 4
+        return
+    State.pendingExitFS := true
 }
 
 ; ── Ctrl+W: send losslessHotkey when in fullscreen, then let browser close the tab ─

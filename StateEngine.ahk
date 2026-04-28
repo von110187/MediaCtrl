@@ -142,14 +142,18 @@ _UpdateMediaState(sessions) {
 
     newBrowserIsPlaying  := false
     newSongIsPlaying := false
+    newBrowserStatus := 0
 
     for session in sessions {
         rawId := session.SourceAppUserModelId
-        if InStr(rawId, CONFIG.BROWSER)
-            newBrowserIsPlaying := session.PlaybackStatus = 4
-        else if InStr(rawId, CONFIG.SONG)
+        if InStr(rawId, CONFIG.BROWSER) {
+            newBrowserStatus     := session.PlaybackStatus
+            newBrowserIsPlaying  := newBrowserStatus = 4
+        } else if InStr(rawId, CONFIG.SONG)
             newSongIsPlaying := session.PlaybackStatus = 4
     }
+
+    State.browserPlaybackStatus := newBrowserStatus
 
     if newBrowserIsPlaying {
         ; Playing — commit immediately, reset debounce counter
