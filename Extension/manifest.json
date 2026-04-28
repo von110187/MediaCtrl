@@ -1,0 +1,22 @@
+{
+    "manifest_version": 3,
+    "name": "MediaCtrl Bridge",
+    "version": "1.0",
+    "permissions": ["tabs", "activeTab", "scripting"],
+    "host_permissions": [
+        "http://127.0.0.1/*",
+        "ws://127.0.0.1/*",
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": ["*://*/*"],
+            "js": ["content.js"],
+            "run_at": "document_idle",
+            "all_frames": false
+        }
+    ]
+}
