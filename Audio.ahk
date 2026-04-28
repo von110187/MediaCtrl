@@ -55,10 +55,13 @@ _CheckSongOutro(session) {
         ; Spotify stays at status=4 through silent outros — only peak drops to 0.
         ; songSkipCooldownUntil suppresses this for 2 s after any track change
         ; so the post-skip silence doesn't trigger an unwanted extra skip.
+        ; Only trigger when within the last 10 seconds of the track (duration > 0
+        ; guard prevents skipping on tracks where timeline data is unavailable).
         peak := _GetSongPeak()
         if peak >= 0 {
             if (peak < 0.001) {
-                if !State.songSkipLock && A_TickCount >= State.songSkipCooldownUntil {
+                inOutroWindow := (duration > 0) && ((duration - pos) <= 10)
+                if !State.songSkipLock && A_TickCount >= State.songSkipCooldownUntil && inOutroWindow {
                     State.songSkipLock := true
                     session.SkipNext()
                 }
