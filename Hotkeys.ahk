@@ -88,6 +88,12 @@ $AppsKey:: {
     if State.browserPlaybackStatus != 4
         return
     State.pendingExitFS := true
+    SetTimer(_ClearPendingExitFS, -1000)
+}
+
+_ClearPendingExitFS() {
+    global State
+    State.pendingExitFS := false
 }
 
 ; ── Ctrl+W: send losslessHotkey when in fullscreen, then let browser close the tab ─
