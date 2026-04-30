@@ -189,23 +189,55 @@ _GetWasapiSessionsDebug() {
 _SongTogglePlayPause() {
     global State, CONFIG
     for session in State.sessions {
-        if InStr(session.SourceAppUserModelId, CONFIG.SONG)
+        if InStr(session.SourceAppUserModelId, CONFIG.SONG) {
             session.TogglePlayPause()
+            return
+        }
     }
+    ; No session yet — Spotify PWA is open but hasn't played anything (no SMTC session exists).
+    _ActivateSpotifyPWA("{Space}")
 }
 
 _SongSkipNext() {
     global State, CONFIG
     for session in State.sessions {
-        if InStr(session.SourceAppUserModelId, CONFIG.SONG)
+        if InStr(session.SourceAppUserModelId, CONFIG.SONG) {
             session.SkipNext()
+            return
+        }
     }
+    ; No session — activate Spotify PWA and send Ctrl+Right
+    _ActivateSpotifyPWA("^{Right}")
 }
 
 _SongSkipPrevious() {
     global State, CONFIG
     for session in State.sessions {
-        if InStr(session.SourceAppUserModelId, CONFIG.SONG)
+        if InStr(session.SourceAppUserModelId, CONFIG.SONG) {
             session.SkipPrevious()
+            ; If not playing, also fire Play() so track starts immediately
+            if session.PlaybackStatus != 4
+                session.Play()
+            return
+        }
+    }
+    ; No session — activate Spotify PWA and send Ctrl+Left then Space
+    _ActivateSpotifyPWA("^{Left}", "{Space}")
+}
+
+; Activates the Spotify PWA window, sends a key (and optional second key after a delay), then restores focus.
+_ActivateSpotifyPWA(key, key2 := "", delay := 2500) {
+    if WinExist("Spotify - Web Player ahk_class Chrome_WidgetWin_1") {
+        prevWin := WinExist("A")
+        WinActivate("Spotify - Web Player ahk_class Chrome_WidgetWin_1")
+        WinWaitActive("Spotify - Web Player ahk_class Chrome_WidgetWin_1", , 1)
+        Send(key)
+        if key2 != "" {
+            Sleep(delay)
+            Send(key2)
+        }
+        Sleep(100)
+        if prevWin
+            WinActivate("ahk_id " . prevWin)
     }
 }
