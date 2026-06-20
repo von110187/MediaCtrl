@@ -15,17 +15,16 @@ InitSpeaker() {
 
     State.activeSpeaker := speakerName
 
-    if (speakerName = "Harman Kardon") {
+    if InStr(speakerName, "Harman Kardon") {
         ; Default bass OFF
-        _SetBass(false)
         ; Peace EQ should be running already — launch if not
         if !ProcessExist("Peace.exe") {
             Run('"D:\Program Files\EqualizerAPO\config\Peace.exe"')
             ProcessWait("Peace.exe")
             Sleep(3000)
         }
-
-    } else if (speakerName = "Adam D3V") {
+        _SetBass(false)
+    } else if InStr(speakerName, "Adam D3V") {
         ; Nothing for first 30 min — timer set in Main.ahk after InitSpeaker()
     }
 }
