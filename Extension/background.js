@@ -14,9 +14,15 @@ function connect() {
 
     ws.onopen = () => {
         console.log("[MediaCtrl] Connected to AHK bridge");
+        // Don't call pushPlayableTabs() here — tabMediaMap is freshly empty
+        // after any service-worker restart, and pushing it now would overwrite
+        // AHK's last-known-good state with an empty list before the reinjected
+        // tabs below have had a chance to report back in. Each tab's own
+        // mediaPresence message (sent from content.js's "already injected"
+        // branch) calls pushPlayableTabs() itself once it arrives, so the
+        // list rebuilds correctly without ever going through a false-empty state.
         reinjectAllTabs();
         pushCurrentTab();
-        pushPlayableTabs();
     };
 
     ws.onmessage = async (event) => {
@@ -125,5 +131,38 @@ async function reinjectAllTabs() {
         }
     }
 }
+
+// ── Service worker keepalive / watchdog ───────────────────────────────────────
+// Chrome can terminate this service worker after ~30s of inactivity. An idle
+// WebSocket (no traffic in either direction — e.g. just watching one video with
+// no tab switches or DOM changes) doesn't count as activity, so the worker can
+// die mid-session, silently dropping the connection to AHK. setTimeout-based
+// reconnect (ws.onclose above) only works if the worker is still alive to run
+// it — if Chrome already killed it, that timer dies too and nothing reconnects
+// until some unrelated tab event happens to wake the worker back up.
+//
+// chrome.alarms is the sanctioned fix: alarms survive worker termination and
+// will wake the worker on schedule to re-run this handler, regardless of
+// whether anything else happened. 30s is the minimum period Chrome allows.
+const HEARTBEAT_ALARM = "mediactrl-heartbeat";
+chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== HEARTBEAT_ALARM) return;
+
+    if (!ws || ws.readyState === WebSocket.CLOSED) {
+        // Connection is down (or this is a fresh worker instance) — reconnect.
+        // connect()'s ws.onopen will reinject content scripts into every tab,
+        // which repairs any tab whose media state was lost when the previous
+        // worker instance (and its tabMediaMap) was terminated.
+        connect();
+    } else if (ws.readyState === WebSocket.OPEN) {
+        // Send a tiny ping. Per Chrome's WebSocket service-worker lifetime
+        // extension (Chrome 116+), any traffic on the socket resets the 30s
+        // idle timer — so this keeps the worker (and the connection) alive
+        // through quiet stretches instead of waiting to die and reconnect.
+        try { ws.send(JSON.stringify({ ping: Date.now() })); } catch (e) {}
+    }
+});
 
 connect();
