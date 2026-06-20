@@ -82,17 +82,40 @@ _UpdateUrlState() {
                 newPlayingTabs.Push(pipePos ? SubStr(entry, pipePos + 1) : entry)
             }
         }
-        ; Prune seen-tab cache for any tabs that are no longer playable
+        ; Prune seen-tab cache for any tabs that are no longer playable.
+        ;
+        ; Two things make this trickier than a plain set-difference:
+        ; 1. Some players (Bilibili included) mutate the URL slightly during
+        ;    normal playback — e.g. a tracking/timestamp query param that
+        ;    changes on play, pause, or seek — so comparing seenUrl to tabUrl
+        ;    with exact equality can make an already-seen video look "new"
+        ;    again. Use the same lenient substring match Gate 2 below uses
+        ;    for the playability check, so URL identity is judged consistently
+        ;    everywhere in the state engine.
+        ; 2. A single tick where the extension's reported tab list is briefly
+        ;    missing this URL (e.g. a DOM blip while the player's UI redraws
+        ;    on pause/resume) shouldn't immediately forget it either. Require
+        ;    a few consecutive misses before pruning.
         for seenUrl in State.startupDelaySeen {
             stillPresent := false
             for tabUrl in newPlayingTabs {
-                if seenUrl = tabUrl {
+                if (seenUrl = tabUrl) || InStr(seenUrl, tabUrl) || InStr(tabUrl, seenUrl) {
                     stillPresent := true
                     break
                 }
             }
-            if !stillPresent
-                State.startupDelaySeen.Delete(seenUrl)
+            if stillPresent {
+                State.startupDelayMissCount.Delete(seenUrl)
+            } else {
+                misses := State.startupDelayMissCount.Has(seenUrl) ? State.startupDelayMissCount[seenUrl] : 0
+                misses += 1
+                if misses >= 3 {
+                    State.startupDelaySeen.Delete(seenUrl)
+                    State.startupDelayMissCount.Delete(seenUrl)
+                } else {
+                    State.startupDelayMissCount[seenUrl] := misses
+                }
+            }
         }
 
         ; Synthesize iframe-player sites into playingTabs — content script can't detect
@@ -133,6 +156,19 @@ _FindMatchedSite(url) {
             return site
     }
     return ""
+}
+
+; Same lenient substring match used for the playability check (Gate 2 in
+; _EvalVideoHotkeys) — keeps "have we already paid the startup delay for
+; this video" consistent with how URL identity is judged everywhere else,
+; so minor URL drift during playback doesn't make a seen video look new.
+_UrlSeenForDelay(url) {
+    global State
+    for seenUrl in State.startupDelaySeen {
+        if (url = seenUrl) || InStr(url, seenUrl) || InStr(seenUrl, url)
+            return true
+    }
+    return false
 }
 
 ; ── Media session state ───────────────────────────────────────────────────────
@@ -305,7 +341,7 @@ _EnterFullscreen() {
     _SetVideoHotkeys(true)
 
     if site.startupDelay {
-        if !State.startupDelaySeen.Has(State.currentUrl) {
+        if !_UrlSeenForDelay(State.currentUrl) {
             State.startupDelaySeen.Set(State.currentUrl, true)
             Sleep(site.sleepMs)
         }
