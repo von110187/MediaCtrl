@@ -45,6 +45,8 @@ global State := {
 
     ; Bilibili first-visit sleep — tracks each playable tab URL seen, to sleep only on first enter
     startupDelaySeen: Map(),
+    ; Consecutive-miss counter per startupDelaySeen entry — see pruning logic in StateEngine.ahk
+    startupDelayMissCount: Map(),
 
     ; song
     songIsPlaying:        false,
