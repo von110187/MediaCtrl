@@ -39,10 +39,30 @@ const { WebSocketServer } = require("ws");
 const URL_FILE        = path.join(require("os").tmpdir(), "ahk_current_url.txt");
 const TABS_FILE       = path.join(require("os").tmpdir(), "ahk_playing_tabs.txt");
 const COR5_FILE       = path.join(require("os").tmpdir(), "ahk_cor5_href.txt");
+const DEBUG_LOG_FILE  = path.join(require("os").tmpdir(), "ahk_bridge_debug.log");
+const PID_FILE        = path.join(require("os").tmpdir(), "ahk_bridge_pid.txt");
+const BRIDGE_VERSION  = "sync-writes-v2";
 
 let currentUrl  = "";
 let playingTabs = [];
 let wsClient    = null;
+
+// Append-only (never truncated) on purpose: if a stale old-code process is
+// still alive alongside a freshly started one, both will log to this same
+// file with their own PIDs, making that overlap directly visible instead of
+// guessed at.
+function dlog(msg) {
+    try {
+        fs.appendFileSync(DEBUG_LOG_FILE, "[" + new Date().toISOString() + "] [pid " + process.pid + "] " + msg + "\n");
+    } catch (e) {}
+}
+
+// Overwritten every startup — whatever PID is in this file right now is the
+// most recently started bridge. Compare against Task Manager's node.exe list:
+// if there's more than one node.exe and it's not this PID, that's a stale
+// leftover process still serving the OLD code on the same port.
+try { fs.writeFileSync(PID_FILE, "pid=" + process.pid + " version=" + BRIDGE_VERSION + " startedAt=" + new Date().toISOString()); } catch (e) {}
+dlog("=== bridge starting, version=" + BRIDGE_VERSION + " ===");
 
 // HTTP server — AHK sends commands via /setcommand/<cmd>
 const server = http.createServer((req, res) => {
@@ -70,24 +90,53 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ port: 9224, host: "127.0.0.1" });
 
 wss.on("connection", (ws) => {
+    dlog("client connected");
+    // If a previous connection is still hanging around (e.g. the extension's
+    // old service-worker instance never cleanly closed its socket before a
+    // new one connected), kill it outright so it can't linger as a zombie
+    // that still LOOKS connected but never actually delivers data again.
+    if (wsClient && wsClient !== ws) {
+        dlog("closing stale prior connection");
+        try { wsClient.terminate(); } catch (e) {}
+    }
     wsClient = ws;
     ws.on("message", (msg) => {
         try {
             const data = JSON.parse(msg);
+            // Synchronous writes are deliberate here: fs.writeFile's async
+            // callback gives no guarantee that overlapping writes to the same
+            // file complete in the order they were issued (Node's thread pool
+            // can finish a later write before an earlier one). When two pushes
+            // land close together (e.g. two tabs reporting in within
+            // milliseconds of each other), that race could let a stale,
+            // smaller snapshot clobber a newer, larger one on disk. These
+            // payloads are a few hundred bytes at most, so blocking briefly
+            // here is cheap and removes the race entirely.
             if (data.url !== undefined) {
                 currentUrl = data.url;
-                fs.writeFile(URL_FILE, currentUrl, () => {});
+                try { fs.writeFileSync(URL_FILE, currentUrl); } catch (e) {}
             }
             if (data.playingTabs) {
+                dlog("received playingTabs (" + data.playingTabs.length + "): " + JSON.stringify(data.playingTabs));
                 playingTabs = data.playingTabs;
-                fs.writeFile(TABS_FILE, playingTabs.join("\n"), () => {});
+                try {
+                    fs.writeFileSync(TABS_FILE, playingTabs.join("\n"));
+                    dlog("wrote " + playingTabs.length + " tab(s) to " + TABS_FILE);
+                } catch (e) {
+                    dlog("writeFileSync FAILED: " + e.message);
+                }
             }
             if ("cor5Href" in data) {
-                fs.writeFile(COR5_FILE, data.cor5Href || "", () => {});
+                try { fs.writeFileSync(COR5_FILE, data.cor5Href || ""); } catch (e) {}
             }
-        } catch(e) {}
+            if (data.ping !== undefined) {
+                try { ws.send(JSON.stringify({ pong: data.ping })); } catch (e) {}
+            }
+        } catch(e) {
+            dlog("message handler error: " + e.message);
+        }
     });
-    ws.on("close", () => wsClient = null);
+    ws.on("close", () => { dlog("client disconnected"); if (wsClient === ws) wsClient = null; });
 });
 
 function sendToExtension(payload) {

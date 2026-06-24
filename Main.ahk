@@ -59,9 +59,22 @@ MonitorTick() {
     global State
     try {
         sessions := Media.GetSessions()
-    } catch {
-        return
+    } catch as err {
+        ; Media.GetSessions() is a COM/WinRT call into the OS media-session
+        ; manager — unrelated to the bridge-derived URL/tab state, which
+        ; comes from files written by the Chrome extension. Previously a
+        ; failure here did `return`, skipping UpdateState() (and therefore
+        ; _UpdateUrlState()) entirely for the tick — so a single COM hiccup
+        ; (e.g. triggered by a new tab creating a new OS media session)
+        ; could freeze the playable-tabs list right along with it, with no
+        ; visibility into why. Log it and fall back to the last known
+        ; session list instead, so tab/URL tracking keeps moving regardless.
+        try FileAppend(A_Now . " GetSessions failed: " . err.Message . "`n", A_Temp . "\ahk_getsessions_errors.log")
+        sessions := State.sessions
     }
     UpdateState(sessions)
-    MonitorAudio(sessions)
+    try {
+        MonitorAudio(sessions)
+    } catch {
+    }
 }
