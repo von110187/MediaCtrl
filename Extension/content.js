@@ -1,21 +1,19 @@
 // ── Media detection ───────────────────────────────────────────────────────────
-// For known media sites, "playable" is decided from the URL itself rather than
-// from <video>/<audio> presence — a video/audio tag check is unreliable on these
-// sites because the homepage and user-profile pages also embed players (preview
-// thumbnails, autoplay clips, etc.) and would otherwise get flagged as playable.
+// For known media sites, "playable" is decided from the URL itself rather
+// than <video>/<audio> presence — a tag check is unreliable on these sites
+// since homepage/profile pages also embed preview players that would get
+// flagged as playable.
 //
-// urlLooksPlayable() returns true/false for sites with a known "this is a watch
-// page" URL shape, or null if the site isn't one of those (e.g. douyin, or any
-// other domain) — in which case checkAndReport() falls back to the original
-// <video>/<audio> tag check, unchanged.
+// urlLooksPlayable() returns true/false for a known "watch page" URL shape,
+// or null for any other site, in which case checkAndReport() falls back to
+// the <video>/<audio> tag check.
 //
-// MutationObserver catches dynamically injected players (SPAs, YouTube, etc.)
-// and also re-fires checkAndReport on SPA navigations (e.g. YouTube swapping
-// from home to a /watch page without a full page load), keeping the URL-based
-// check in sync with the current location.
+// MutationObserver catches dynamically injected players and re-fires
+// checkAndReport on SPA navigations (e.g. YouTube home → /watch with no
+// full page load).
 //
-// Double-injection guard: AHK reload causes background.js to re-inject this
-// script into all existing tabs. If already running, just re-report state.
+// Double-injection guard: AHK reload re-injects this script into all tabs.
+// If already running, just re-report state.
 
 function urlLooksPlayable(hostname, pathname) {
     if (/(^|\.)youtube\.com$/.test(hostname)) {

@@ -17,12 +17,9 @@ function connect() {
     ws.onopen = () => {
         console.log("[MediaCtrl] Connected to AHK bridge");
         // Don't call pushPlayableTabs() here — tabMediaMap is freshly empty
-        // after any service-worker restart, and pushing it now would overwrite
-        // AHK's last-known-good state with an empty list before the reinjected
-        // tabs below have had a chance to report back in. reinjectAllTabs()
-        // below actively confirms each tab's state (with retries) and pushes
-        // once it's done, so the list rebuilds correctly without ever going
-        // through a false-empty state.
+        // after a service-worker restart. reinjectAllTabs() below confirms
+        // each tab's state with retries and pushes once done, so the list
+        // rebuilds correctly without going through a false-empty state.
         reinjectAllTabs();
         pushCurrentTab();
     };
@@ -133,10 +130,9 @@ async function reinjectAllTabs() {
     const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
     console.log(`[MediaCtrl] reinjectAllTabs: found ${tabs.length} http(s) tabs`, tabs.map(t => t.id + ":" + t.url));
     // Settle all tabs concurrently, then push once with the complete result.
-    // (content.js's own spontaneous mediaPresence message — sent from the
-    // "already injected" branch — still arrives independently and pushes too;
-    // this is just a verified backstop so a tab can't permanently drop out of
-    // tabMediaMap if that fire-and-forget message is lost.)
+    // content.js's own spontaneous mediaPresence message still arrives and
+    // pushes too — this is just a verified backstop in case that fire-and-
+    // forget message gets lost.
     await Promise.allSettled(tabs.map((tab) => reportTabState(tab.id, tab.url)));
     console.log(`[MediaCtrl] reinjectAllTabs: done, tabMediaMap now has ${tabMediaMap.size} entr${tabMediaMap.size === 1 ? "y" : "ies"}`, Array.from(tabMediaMap.entries()));
     pushPlayableTabs();
@@ -176,17 +172,12 @@ async function reportTabState(tabId, url, attempt = 1) {
 }
 
 // ── Service worker keepalive / watchdog ───────────────────────────────────────
-// Chrome can terminate this service worker after ~30s of inactivity. An idle
-// WebSocket (no traffic in either direction — e.g. just watching one video with
-// no tab switches or DOM changes) doesn't count as activity, so the worker can
-// die mid-session, silently dropping the connection to AHK. setTimeout-based
-// reconnect (ws.onclose above) only works if the worker is still alive to run
-// it — if Chrome already killed it, that timer dies too and nothing reconnects
-// until some unrelated tab event happens to wake the worker back up.
+// Chrome kills this service worker after ~30s of inactivity, and an idle
+// WebSocket doesn't count as activity — so the worker (and its reconnect
+// timer) can die mid-session with no chance to recover on its own.
 //
-// chrome.alarms is the sanctioned fix: alarms survive worker termination and
-// will wake the worker on schedule to re-run this handler, regardless of
-// whether anything else happened. 30s is the minimum period Chrome allows.
+// chrome.alarms survives worker termination and wakes it on schedule,
+// regardless of what else happened. 30s is the minimum period Chrome allows.
 const HEARTBEAT_ALARM = "mediactrl-heartbeat";
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
 
@@ -200,14 +191,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         // worker instance (and its tabMediaMap) was terminated.
         connect();
     } else if (ws.readyState === WebSocket.OPEN) {
-        // readyState alone isn't trustworthy here — a bridge-side hang or a
-        // half-torn-down loopback socket can leave the JS-level readyState
-        // stuck at OPEN long after the connection has actually stopped
-        // delivering data, with no error/close event ever firing to tell us.
-        // That's exactly the failure this heartbeat is meant to catch, so
-        // require an actual pong within 2 missed intervals (90s of grace)
-        // before trusting it — otherwise force a real close and let the
-        // existing onclose → reconnTimer path re-establish a fresh socket.
+        // readyState alone isn't trustworthy — a bridge-side hang or a
+        // half-torn-down loopback socket can leave it stuck at OPEN with
+        // no close/error event ever firing. Require a pong within 2 missed
+        // intervals (90s) before trusting it, otherwise force a reconnect.
         if (Date.now() - lastPongAt > 90000) {
             console.warn("[MediaCtrl] No pong in 90s — connection looks dead, forcing reconnect");
             try { ws.close(); } catch (e) {}

@@ -1,5 +1,5 @@
 ; ============ MONITOR AUDIO ============
-; Called every tick. song outro logic only — no playback state tracking here.
+; Called every tick. Spotify outro logic only — no playback state tracking here.
 
 MonitorAudio(sessions) {
     global CONFIG
@@ -11,14 +11,14 @@ MonitorAudio(sessions) {
 
 ; ============ SONG OUTRO SKIP ============
 ; Skips to next track when status is 4 (playing) but audio peak is 0 —
-; catches silent outros where Spotify never changes status.
+; catches silent Spotify outros that don't change playback status.
 ;
-; Track changes (from any source — keyboard, mouse, phone) are detected by
-; LastUpdatedTime jumping forward. When that happens the cooldown is set so
-; the transient post-skip silence doesn't get misread as a silent outro.
+; Track changes from any source (hotkey, mouse, phone) are detected by
+; LastUpdatedTime jumping forward, which arms a cooldown so the post-skip
+; silence isn't misread as a silent outro.
 ;
-; LastUpdatedTime from the Media library is Windows FILETIME ÷ 10000000 (Windows epoch seconds, Jan 1 1601).
-; Subtract 11644473600 to convert to Unix epoch before comparing with unixNow.
+; LastUpdatedTime is Windows FILETIME ÷ 10,000,000 (epoch Jan 1 1601).
+; Subtract 11644473600 to convert to Unix epoch.
 
 _CheckSongOutro(session) {
     global State
@@ -30,9 +30,8 @@ _CheckSongOutro(session) {
         status      := session.PlaybackStatus
 
         ; ── Track-change detection (universal) ─────────────────────────────
-        ; LastUpdatedTime resets whenever a new track starts, regardless of
-        ; what triggered the skip (AHK hotkey, mouse click, phone, etc.).
-        ; A forward jump means a new track loaded — set cooldown immediately.
+        ; LastUpdatedTime resets on any new track, regardless of trigger
+        ; (hotkey, mouse, phone). A forward jump means a new track loaded.
         if State.songLastUpdatedTime != 0 && lastUpdated > State.songLastUpdatedTime {
             State.songSkipCooldownUntil := A_TickCount + 2000
             State.songSkipLock          := false
@@ -53,10 +52,8 @@ _CheckSongOutro(session) {
 
         ; ── Silent-outro detection ──────────────────────────────────────────
         ; Spotify stays at status=4 through silent outros — only peak drops to 0.
-        ; songSkipCooldownUntil suppresses this for 2 s after any track change
-        ; so the post-skip silence doesn't trigger an unwanted extra skip.
-        ; Only trigger when within the last 10 seconds of the track (duration > 0
-        ; guard prevents skipping on tracks where timeline data is unavailable).
+        ; Cooldown suppresses this for 2s after a track change; duration check
+        ; only fires in the last 10s of the track.
         peak := _GetSongPeak()
         if peak >= 0 {
             if (peak < 0.001) {
@@ -74,14 +71,11 @@ _CheckSongOutro(session) {
 }
 
 ; ============ WASAPI PEAK METER ============
-; Returns song's current audio peak (0.0–1.0), or -1 on failure.
-; song on Edge is identified by session display name containing "song",
-; since it has no dedicated .exe — we can't match by PID.
-
-; song runs as an Edge PWA — no dedicated exe, no display name in WASAPI.
-; Strategy: find all msedge.exe sessions, return the highest peak among them.
-; If song is the only audio source in Edge this is exact; if multiple Edge
-; tabs play simultaneously the max peak is still a valid "is Edge silent?" signal.
+; Returns Spotify's current audio peak (0.0–1.0), or -1 on failure.
+; Spotify runs as an Edge PWA with no dedicated exe and no WASAPI display
+; name, so it can't be matched directly — instead this finds all msedge.exe
+; sessions and returns the highest peak among them. Exact if Spotify is the
+; only audio source in Edge; still a valid "is Edge silent?" signal otherwise.
 _GetSongPeak() {
     global WASAPI_CLSIDS
 
@@ -142,7 +136,7 @@ _GetSongPeak() {
 
 ; ============ WASAPI SESSION DEBUG ============
 ; Returns all WASAPI session display names + identifiers as a string.
-; Used by tooltip to diagnose which session name song registers under.
+; Used by the tooltip to diagnose which session name Spotify registers under.
 
 _GetWasapiSessionsDebug() {
     global WASAPI_CLSIDS

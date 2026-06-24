@@ -82,27 +82,19 @@ _UpdateUrlState() {
                 newPlayingTabs.Push(pipePos ? SubStr(entry, pipePos + 1) : entry)
             }
         }
-        ; Prune seen-tab cache for any tabs that are no longer playable.
+        ; Prune seen-tab cache for tabs no longer playable. Two wrinkles vs.
+        ; a plain set-difference:
+        ; 1. Some players (e.g. Bilibili) mutate the URL slightly during
+        ;    playback (tracking/timestamp params), so exact equality could
+        ;    make an already-seen video look new. Use the same lenient
+        ;    substring match as Gate 2 below.
+        ; 2. A single tick where the tab briefly drops out of the reported
+        ;    list (e.g. a DOM blip on pause/resume) shouldn't forget it
+        ;    immediately — require a few consecutive misses first.
         ;
-        ; Two things make this trickier than a plain set-difference:
-        ; 1. Some players (Bilibili included) mutate the URL slightly during
-        ;    normal playback — e.g. a tracking/timestamp query param that
-        ;    changes on play, pause, or seek — so comparing seenUrl to tabUrl
-        ;    with exact equality can make an already-seen video look "new"
-        ;    again. Use the same lenient substring match Gate 2 below uses
-        ;    for the playability check, so URL identity is judged consistently
-        ;    everywhere in the state engine.
-        ; 2. A single tick where the extension's reported tab list is briefly
-        ;    missing this URL (e.g. a DOM blip while the player's UI redraws
-        ;    on pause/resume) shouldn't immediately forget it either. Require
-        ;    a few consecutive misses before pruning.
-        ;
-        ; Deletions from State.startupDelaySeen are collected and applied
-        ; AFTER this loop finishes, rather than mid-enumeration — deleting
-        ; the current key while iterating the same Map it belongs to is
-        ; unsafe and can throw, which would abort this whole try block
-        ; before State.playingTabs := newPlayingTabs below ever runs,
-        ; freezing the playable-tabs list until a manual restart.
+        ; Deletions are collected and applied after the loop — mutating
+        ; the Map mid-iteration is unsafe and would abort this try block
+        ; before State.playingTabs is set below.
         toForget := []
         for seenUrl in State.startupDelaySeen {
             stillPresent := false
@@ -171,10 +163,8 @@ _FindMatchedSite(url) {
     return ""
 }
 
-; Same lenient substring match used for the playability check (Gate 2 in
-; _EvalVideoHotkeys) — keeps "have we already paid the startup delay for
-; this video" consistent with how URL identity is judged everywhere else,
-; so minor URL drift during playback doesn't make a seen video look new.
+; Same lenient substring match as the Gate 2 playability check — keeps URL
+; identity consistent so minor URL drift doesn't make a seen video look new.
 _UrlSeenForDelay(url) {
     global State
     for seenUrl in State.startupDelaySeen {
