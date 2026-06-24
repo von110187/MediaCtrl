@@ -146,8 +146,8 @@ _HK_d(*) {
 
 _HK_1(*) => SendCommand("speed_1.0")
 _HK_2(*) => SendCommand("speed_1.5")
-_HK_3(*) => SendCommand("speed_2.0")
-_HK_4(*) => SendCommand("speed_0.5")
+_HK_3(*) => SendCommand("speed_1.75")
+_HK_4(*) => SendCommand("speed_2.0")
 
 _HK_Esc(*) {
     global State

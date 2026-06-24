@@ -3,6 +3,7 @@ const WS_URL = "ws://127.0.0.1:9224";
 
 let ws          = null;
 let reconnTimer = null;
+let lastPongAt  = 0;
 
 // tabId → url, for tabs that have a media element
 const tabMediaMap = new Map();
@@ -10,6 +11,7 @@ const tabMediaMap = new Map();
 function connect() {
     if (reconnTimer) { clearTimeout(reconnTimer); reconnTimer = null; }
 
+    lastPongAt = Date.now(); // reset so a fresh connection gets a full grace window
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
@@ -17,10 +19,10 @@ function connect() {
         // Don't call pushPlayableTabs() here — tabMediaMap is freshly empty
         // after any service-worker restart, and pushing it now would overwrite
         // AHK's last-known-good state with an empty list before the reinjected
-        // tabs below have had a chance to report back in. Each tab's own
-        // mediaPresence message (sent from content.js's "already injected"
-        // branch) calls pushPlayableTabs() itself once it arrives, so the
-        // list rebuilds correctly without ever going through a false-empty state.
+        // tabs below have had a chance to report back in. reinjectAllTabs()
+        // below actively confirms each tab's state (with retries) and pushes
+        // once it's done, so the list rebuilds correctly without ever going
+        // through a false-empty state.
         reinjectAllTabs();
         pushCurrentTab();
     };
@@ -28,6 +30,10 @@ function connect() {
     ws.onmessage = async (event) => {
         try {
             const data = JSON.parse(event.data);
+            if (data.pong !== undefined) {
+                lastPongAt = Date.now();
+                return;
+            }
             if (data.navigate) {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (tab) chrome.tabs.update(tab.id, { url: data.navigate });
@@ -65,6 +71,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
     if (msg.type === "mediaPresence") {
         if (!url?.startsWith("http")) return;
+        console.log(`[MediaCtrl] tab ${tabId} (${url}): mediaPresence push -> hasMedia=${msg.hasMedia}`);
         if (msg.hasMedia) {
             tabMediaMap.set(tabId, url);
         } else {
@@ -109,8 +116,12 @@ function pushCurrentTab() {
 }
 
 function pushPlayableTabs() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn(`[MediaCtrl] pushPlayableTabs: socket not open (readyState=${ws?.readyState}) — not sent. tabMediaMap currently has ${tabMediaMap.size} entries.`);
+        return;
+    }
     const entries = Array.from(tabMediaMap.entries()).map(([tabId, url]) => tabId + "|" + url);
+    console.log(`[MediaCtrl] pushPlayableTabs: sending ${entries.length} tab(s)`, entries);
     ws.send(JSON.stringify({ playingTabs: entries }));
 }
 
@@ -120,15 +131,47 @@ function pushPlayableTabs() {
 
 async function reinjectAllTabs() {
     const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
-    for (const tab of tabs) {
-        try {
-            await chrome.scripting.executeScript({
-                target: { tabId: tab.id, allFrames: false },
-                files: ["content.js"],
-            });
-        } catch (e) {
-            // Tab may not be injectable (e.g. chrome:// pages, PDFs) — skip silently
+    console.log(`[MediaCtrl] reinjectAllTabs: found ${tabs.length} http(s) tabs`, tabs.map(t => t.id + ":" + t.url));
+    // Settle all tabs concurrently, then push once with the complete result.
+    // (content.js's own spontaneous mediaPresence message — sent from the
+    // "already injected" branch — still arrives independently and pushes too;
+    // this is just a verified backstop so a tab can't permanently drop out of
+    // tabMediaMap if that fire-and-forget message is lost.)
+    await Promise.allSettled(tabs.map((tab) => reportTabState(tab.id, tab.url)));
+    console.log(`[MediaCtrl] reinjectAllTabs: done, tabMediaMap now has ${tabMediaMap.size} entr${tabMediaMap.size === 1 ? "y" : "ies"}`, Array.from(tabMediaMap.entries()));
+    pushPlayableTabs();
+}
+
+async function reportTabState(tabId, url, attempt = 1) {
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId, allFrames: false },
+            files: ["content.js"],
+        });
+    } catch (e) {
+        // Tab may not be injectable (e.g. chrome:// pages, PDFs) — skip silently
+        console.log(`[MediaCtrl] tab ${tabId} (${url}): executeScript failed — ${e.message}`);
+        return;
+    }
+
+    try {
+        const response = await chrome.tabs.sendMessage(tabId, { command: "reportState" });
+        console.log(`[MediaCtrl] tab ${tabId} (${url}): reportState ->`, response);
+        if (response?.hasMedia) tabMediaMap.set(tabId, url);
+        else tabMediaMap.delete(tabId);
+    } catch (e) {
+        // The script injected fine but didn't answer in time — happens on
+        // backgrounded/throttled or just-discarded tabs racing the reconnect.
+        // Retry a few times with a short delay rather than silently dropping
+        // this tab out of playableTabs until the user manually reloads it.
+        console.log(`[MediaCtrl] tab ${tabId} (${url}): sendMessage failed on attempt ${attempt} — ${e.message}`);
+        if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            return reportTabState(tabId, url, attempt + 1);
         }
+        console.warn(`[MediaCtrl] tab ${tabId} (${url}): gave up after ${attempt} attempts`);
+        // Gave up — leave tabMediaMap's existing entry (if any) untouched
+        // rather than guessing either way.
     }
 }
 
@@ -157,11 +200,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         // worker instance (and its tabMediaMap) was terminated.
         connect();
     } else if (ws.readyState === WebSocket.OPEN) {
-        // Send a tiny ping. Per Chrome's WebSocket service-worker lifetime
-        // extension (Chrome 116+), any traffic on the socket resets the 30s
-        // idle timer — so this keeps the worker (and the connection) alive
-        // through quiet stretches instead of waiting to die and reconnect.
-        try { ws.send(JSON.stringify({ ping: Date.now() })); } catch (e) {}
+        // readyState alone isn't trustworthy here — a bridge-side hang or a
+        // half-torn-down loopback socket can leave the JS-level readyState
+        // stuck at OPEN long after the connection has actually stopped
+        // delivering data, with no error/close event ever firing to tell us.
+        // That's exactly the failure this heartbeat is meant to catch, so
+        // require an actual pong within 2 missed intervals (90s of grace)
+        // before trusting it — otherwise force a real close and let the
+        // existing onclose → reconnTimer path re-establish a fresh socket.
+        if (Date.now() - lastPongAt > 90000) {
+            console.warn("[MediaCtrl] No pong in 90s — connection looks dead, forcing reconnect");
+            try { ws.close(); } catch (e) {}
+        } else {
+            try { ws.send(JSON.stringify({ ping: Date.now() })); } catch (e) {}
+        }
     }
 });
 

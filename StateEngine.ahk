@@ -96,6 +96,14 @@ _UpdateUrlState() {
         ;    missing this URL (e.g. a DOM blip while the player's UI redraws
         ;    on pause/resume) shouldn't immediately forget it either. Require
         ;    a few consecutive misses before pruning.
+        ;
+        ; Deletions from State.startupDelaySeen are collected and applied
+        ; AFTER this loop finishes, rather than mid-enumeration — deleting
+        ; the current key while iterating the same Map it belongs to is
+        ; unsafe and can throw, which would abort this whole try block
+        ; before State.playingTabs := newPlayingTabs below ever runs,
+        ; freezing the playable-tabs list until a manual restart.
+        toForget := []
         for seenUrl in State.startupDelaySeen {
             stillPresent := false
             for tabUrl in newPlayingTabs {
@@ -105,17 +113,21 @@ _UpdateUrlState() {
                 }
             }
             if stillPresent {
-                State.startupDelayMissCount.Delete(seenUrl)
+                if State.startupDelayMissCount.Has(seenUrl)
+                    State.startupDelayMissCount.Delete(seenUrl)
             } else {
                 misses := State.startupDelayMissCount.Has(seenUrl) ? State.startupDelayMissCount[seenUrl] : 0
                 misses += 1
                 if misses >= 3 {
-                    State.startupDelaySeen.Delete(seenUrl)
-                    State.startupDelayMissCount.Delete(seenUrl)
+                    toForget.Push(seenUrl)
                 } else {
                     State.startupDelayMissCount[seenUrl] := misses
                 }
             }
+        }
+        for seenUrl in toForget {
+            State.startupDelaySeen.Delete(seenUrl)
+            State.startupDelayMissCount.Delete(seenUrl)
         }
 
         ; Synthesize iframe-player sites into playingTabs — content script can't detect
@@ -134,7 +146,8 @@ _UpdateUrlState() {
         }
 
         State.playingTabs := newPlayingTabs
-    } catch {
+    } catch as err {
+        try FileAppend(A_Now . " _UpdateUrlState failed: " . err.Message . " (playingTabs kept at " . State.playingTabs.Length . ")`n", A_Temp . "\ahk_urlstate_errors.log")
         ; keep last known
     }
 
