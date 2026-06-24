@@ -21,6 +21,7 @@ global CONFIG := {
     ; startupDelay — wait for player on first visit (sleepMs controls duration)
     ; sleepMs     — startup delay in ms (used when startupDelay is true)
     ; holdSeek    — hold Right key for seek (Bilibili/Douyin style)
+    ; iframePlayer — player lives in a cross-origin iframe the content script can't see into
     SITES: {
         youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
         bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },

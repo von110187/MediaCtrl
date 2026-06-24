@@ -47,20 +47,18 @@ let currentUrl  = "";
 let playingTabs = [];
 let wsClient    = null;
 
-// Append-only (never truncated) on purpose: if a stale old-code process is
-// still alive alongside a freshly started one, both will log to this same
-// file with their own PIDs, making that overlap directly visible instead of
-// guessed at.
+// Append-only on purpose: if a stale old process is still alive alongside
+// a fresh one, both log to this file with their own PIDs, making the
+// overlap visible instead of guessed at.
 function dlog(msg) {
     try {
         fs.appendFileSync(DEBUG_LOG_FILE, "[" + new Date().toISOString() + "] [pid " + process.pid + "] " + msg + "\n");
     } catch (e) {}
 }
 
-// Overwritten every startup — whatever PID is in this file right now is the
-// most recently started bridge. Compare against Task Manager's node.exe list:
-// if there's more than one node.exe and it's not this PID, that's a stale
-// leftover process still serving the OLD code on the same port.
+// Overwritten every startup — the PID in this file is the most recently
+// started bridge. If Task Manager shows another node.exe with a different
+// PID, that's a stale process still serving old code on the same port.
 try { fs.writeFileSync(PID_FILE, "pid=" + process.pid + " version=" + BRIDGE_VERSION + " startedAt=" + new Date().toISOString()); } catch (e) {}
 dlog("=== bridge starting, version=" + BRIDGE_VERSION + " ===");
 
@@ -91,10 +89,9 @@ const wss = new WebSocketServer({ port: 9224, host: "127.0.0.1" });
 
 wss.on("connection", (ws) => {
     dlog("client connected");
-    // If a previous connection is still hanging around (e.g. the extension's
-    // old service-worker instance never cleanly closed its socket before a
-    // new one connected), kill it outright so it can't linger as a zombie
-    // that still LOOKS connected but never actually delivers data again.
+    // Kill any prior connection outright so it can't linger as a zombie
+    // that looks connected but never delivers data again (e.g. the
+    // extension's old service-worker never closed its socket cleanly).
     if (wsClient && wsClient !== ws) {
         dlog("closing stale prior connection");
         try { wsClient.terminate(); } catch (e) {}
@@ -103,15 +100,10 @@ wss.on("connection", (ws) => {
     ws.on("message", (msg) => {
         try {
             const data = JSON.parse(msg);
-            // Synchronous writes are deliberate here: fs.writeFile's async
-            // callback gives no guarantee that overlapping writes to the same
-            // file complete in the order they were issued (Node's thread pool
-            // can finish a later write before an earlier one). When two pushes
-            // land close together (e.g. two tabs reporting in within
-            // milliseconds of each other), that race could let a stale,
-            // smaller snapshot clobber a newer, larger one on disk. These
-            // payloads are a few hundred bytes at most, so blocking briefly
-            // here is cheap and removes the race entirely.
+            // Synchronous writes are deliberate: async fs.writeFile gives no
+            // ordering guarantee between overlapping writes, so two pushes
+            // landing close together could let a stale write clobber a newer
+            // one. Payloads are tiny, so blocking briefly is cheap.
             if (data.url !== undefined) {
                 currentUrl = data.url;
                 try { fs.writeFileSync(URL_FILE, currentUrl); } catch (e) {}
