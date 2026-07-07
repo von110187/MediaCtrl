@@ -96,7 +96,8 @@ InitVideoHotkeys() {
     Hotkey("$s", _HK_s, "Off")
     Hotkey("$d", _HK_d, "Off")
 
-    ; 1234 — playback speed
+    ; 0 — restart from beginning; 1234 — playback speed
+    Hotkey("$0", _HK_0, "Off")
     Hotkey("$1", _HK_1, "Off")
     Hotkey("$2", _HK_2, "Off")
     Hotkey("$3", _HK_3, "Off")
@@ -144,10 +145,11 @@ _HK_d(*) {
     }
 }
 
+_HK_0(*) => SendCommand("seek_0")
 _HK_1(*) => SendCommand("speed_1.0")
 _HK_2(*) => SendCommand("speed_1.5")
-_HK_3(*) => SendCommand("speed_1.75")
-_HK_4(*) => SendCommand("speed_2.0")
+_HK_3(*) => SendCommand("speed_2.0")
+_HK_4(*) => SendCommand("speed_3.0")
 
 _HK_Esc(*) {
     global State

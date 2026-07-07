@@ -34,7 +34,7 @@ global CONFIG := {
     SITES: {
         youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
         bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 500,    holdSeek: true,  iframePlayer: false },
+        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 800,    holdSeek: true,  iframePlayer: false },
         anime:    { url: "cycani.org",   fsKey: "f", mouseCenter: true,  startupDelay: false, sleepMs: 0,    holdSeek: false, iframePlayer: true },
     },
 
