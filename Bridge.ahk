@@ -39,9 +39,10 @@ const { WebSocketServer } = require("ws");
 const URL_FILE        = path.join(require("os").tmpdir(), "ahk_current_url.txt");
 const TABS_FILE       = path.join(require("os").tmpdir(), "ahk_playing_tabs.txt");
 const COR5_FILE       = path.join(require("os").tmpdir(), "ahk_cor5_href.txt");
+const EXT_PLAYING_FILE = path.join(require("os").tmpdir(), "ahk_ext_playing.txt");
 const DEBUG_LOG_FILE  = path.join(require("os").tmpdir(), "ahk_bridge_debug.log");
 const PID_FILE        = path.join(require("os").tmpdir(), "ahk_bridge_pid.txt");
-const BRIDGE_VERSION  = "sync-writes-v2";
+const BRIDGE_VERSION  = "sync-writes-v3";
 
 let currentUrl  = "";
 let playingTabs = [];
@@ -120,6 +121,9 @@ wss.on("connection", (ws) => {
             }
             if ("cor5Href" in data) {
                 try { fs.writeFileSync(COR5_FILE, data.cor5Href || ""); } catch (e) {}
+            }
+            if ("extPlaying" in data) {
+                try { fs.writeFileSync(EXT_PLAYING_FILE, data.extPlaying ? "1" : "0"); } catch (e) {}
             }
             if (data.ping !== undefined) {
                 try { ws.send(JSON.stringify({ pong: data.ping })); } catch (e) {}

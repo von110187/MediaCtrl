@@ -78,6 +78,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     } else if (msg.type === "cor5Href") {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ cor5Href: msg.href }));
+    } else if (msg.type === "playbackState") {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ extPlaying: msg.isPlaying }));
     }
 });
 

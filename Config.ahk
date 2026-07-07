@@ -12,6 +12,15 @@ global CONFIG := {
     ; At TIMER_ACTIVE=250ms, 1 tick = 250ms debounce — fast response, still absorbs single glitches.
     CHROME_STOP_DEBOUNCE: 1,
 
+    ; How many consecutive ticks the current URL must be missing from playingTabs
+    ; before Gate 2 (_EvalVideoHotkeys) treats the tab as actually left/not-playable.
+    ; Needed because tag-detection sites (e.g. Douyin, which has no URL-based rule
+    ; in content.js) can briefly drop their <video> element from the DOM during a
+    ; feed/player re-render — a single missed tick shouldn't trigger a real
+    ; exit-fullscreen keystroke, since a false exit can desync AHK's fullscreen
+    ; state from the page's real state until the page is reloaded.
+    URL_MISS_DEBOUNCE: 3,
+
     ; Lossless Scaling hotkey
     LOSSLESS_HOTKEY: "{F2}",
 
@@ -25,7 +34,7 @@ global CONFIG := {
     SITES: {
         youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
         bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: false, sleepMs: 0,    holdSeek: true,  iframePlayer: false },
+        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 500,    holdSeek: true,  iframePlayer: false },
         anime:    { url: "cycani.org",   fsKey: "f", mouseCenter: true,  startupDelay: false, sleepMs: 0,    holdSeek: false, iframePlayer: true },
     },
 
