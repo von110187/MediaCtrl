@@ -29,6 +29,15 @@ global State := {
     browserNotPlayingTicks: 0,
     browserInFullScreen: false,
 
+    ; Debounce counter — consecutive ticks Gate 2 (current URL not in playingTabs)
+    ; has failed. See URL_MISS_DEBOUNCE in Config.ahk.
+    urlNotPlayableTicks: 0,
+
+    ; Ground-truth "is the active video actually playing" as observed directly
+    ; by content.js, bypassing Chrome/Windows' own (sometimes unreliable, see
+    ; StateEngine.ahk _UpdateMediaState) SMTC media-session relay.
+    extPlaying: false,
+
     ; Set true by LButton/b while playing — exits fullscreen once audio stops
     pendingExitFS: false,
     ; while audio is still playing. Prevents auto re-enter until audio stops.

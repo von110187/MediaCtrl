@@ -78,14 +78,21 @@ $AppsKey:: {
 }
 
 ; ── LButton: exit fullscreen when a click pauses browser playback ─────────────
-; Only acts when already in fullscreen and browser was playing (status = 4).
+; Only acts when already in fullscreen and browser was playing.
 ; Mirrors _HK_b: arms pendingExitFS so _EvalVideoHotkeys exits once audio stops.
 ; No direct _ExitFullscreenByUser() call — avoids races with the event path.
+;
+; Uses State.browserIsPlaying (which folds in the extension's own ground-truth
+; extPlaying — see _UpdateMediaState) rather than the raw
+; State.browserPlaybackStatus SMTC number. On Douyin that raw number can get
+; stuck never reaching 4/Playing even while genuinely playing, which silently
+; broke this check: the click would pause the video (the page's own native
+; behavior) but pendingExitFS never armed, so fullscreen never exited.
 ~LButton:: {
     global State
     if !State.browserInFullScreen
         return
-    if State.browserPlaybackStatus != 4
+    if !State.browserIsPlaying
         return
     State.pendingExitFS := true
     SetTimer(_ClearPendingExitFS, -1000)

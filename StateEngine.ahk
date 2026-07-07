@@ -65,6 +65,7 @@ _UpdateUrlState() {
     urlFile        := A_Temp . "\ahk_current_url.txt"
     tabsFile       := A_Temp . "\ahk_playing_tabs.txt"
     cor5File       := A_Temp . "\ahk_cor5_href.txt"
+    extPlayingFile := A_Temp . "\ahk_ext_playing.txt"
 
     try {
         newUrl := Trim(FileRead(urlFile))
@@ -149,6 +150,12 @@ _UpdateUrlState() {
         ; keep last known
     }
 
+    try {
+        State.extPlaying := Trim(FileRead(extPlayingFile)) = "1"
+    } catch {
+        ; keep last known
+    }
+
     State.currentUrl  := newUrl
     State.matchedSite := _FindMatchedSite(newUrl)
     _EvalVideoHotkeys()
@@ -193,6 +200,20 @@ _UpdateMediaState(sessions) {
     }
 
     State.browserPlaybackStatus := newBrowserStatus
+
+    ; Windows' SMTC status for the browser is Chrome's own guess about which
+    ; <video> element backs the OS media session, which can get stuck
+    ; reporting "paused" on feed sites that swap <video> elements as you
+    ; scroll (Douyin) — and a site's own player can also stomp
+    ; navigator.mediaSession.playbackState with its own (possibly buggy)
+    ; value, so even having the content script set that property directly
+    ; isn't reliable. On our own configured, non-iframe sites, OR in the
+    ; extension's direct DOM observation (State.extPlaying) as a safety net:
+    ; if either source says "playing", trust it. This fixes the stuck-false
+    ; case without removing SMTC as a fallback if the content script hasn't
+    ; reported yet (e.g. right at page load).
+    if State.matchedSite && !State.matchedSite.iframePlayer
+        newBrowserIsPlaying := newBrowserIsPlaying || State.extPlaying
 
     if newBrowserIsPlaying {
         ; Playing — commit immediately, reset debounce counter
@@ -264,6 +285,20 @@ _EvalVideoHotkeys() {
                 break
             }
         }
+    }
+
+    if urlInPlayable {
+        State.urlNotPlayableTicks := 0
+    } else {
+        ; Debounce — a single tick's DOM blip (e.g. Douyin swapping its <video>
+        ; element mid-feed-rotation during a long idle stretch) shouldn't be
+        ; treated as "left the video" immediately. Sending a real exit-fullscreen
+        ; keystroke on a false alarm can desync AHK's fullscreen state from the
+        ; page's actual state, recoverable only by reloading the page. Require
+        ; a few consecutive misses first, same pattern as browserNotPlayingTicks.
+        State.urlNotPlayableTicks += 1
+        if State.urlNotPlayableTicks < CONFIG.URL_MISS_DEBOUNCE
+            return  ; grace period — leave fullscreen/hotkeys state untouched this tick
     }
 
     if !urlInPlayable {
