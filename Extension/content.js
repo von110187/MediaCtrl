@@ -202,6 +202,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const btn = getActiveCor5();
         if (btn) btn.click();
 
+    } else if (cmd === "seek_0") {
+        const video = getActiveVideo();
+        if (video) video.currentTime = 0;
+
     } else if (cmd?.startsWith("speed_")) {
         const speed = parseFloat(cmd.replace("speed_", ""));
         if (!isNaN(speed)) {

@@ -432,7 +432,7 @@ _SetVideoHotkeys(enable) {
     if State.videoHotkeys = enable
         return
     State.videoHotkeys := enable
-    for key in ["$b", "$w", "$a", "$s", "$d", "$1", "$2", "$3", "$4", "$Esc", "$F1", "$F2", "$F3", "$F5"]
+    for key in ["$b", "$w", "$a", "$s", "$d", "$0", "$1", "$2", "$3", "$4", "$Esc", "$F1", "$F2", "$F3", "$F5"]
         Hotkey(key, enable ? "On" : "Off")
 }
 
