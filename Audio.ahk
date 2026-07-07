@@ -107,7 +107,7 @@ _GetSongPeak() {
                 catch
                     continue
 
-                if !InStr(procName, "msedge")
+                if !InStr(procName, "Spotify")
                     continue
 
                 meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
