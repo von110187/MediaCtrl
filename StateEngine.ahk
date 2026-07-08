@@ -202,18 +202,27 @@ _UpdateMediaState(sessions) {
     State.browserPlaybackStatus := newBrowserStatus
 
     ; Windows' SMTC status for the browser is Chrome's own guess about which
-    ; <video> element backs the OS media session, which can get stuck
-    ; reporting "paused" on feed sites that swap <video> elements as you
-    ; scroll (Douyin) — and a site's own player can also stomp
-    ; navigator.mediaSession.playbackState with its own (possibly buggy)
-    ; value, so even having the content script set that property directly
-    ; isn't reliable. On our own configured, non-iframe sites, OR in the
-    ; extension's direct DOM observation (State.extPlaying) as a safety net:
-    ; if either source says "playing", trust it. This fixes the stuck-false
-    ; case without removing SMTC as a fallback if the content script hasn't
-    ; reported yet (e.g. right at page load).
-    if State.matchedSite && !State.matchedSite.iframePlayer
-        newBrowserIsPlaying := newBrowserIsPlaying || State.extPlaying
+    ; <video> element backs the OS media session — unreliable specifically
+    ; when the tracked element changes (Douyin swapping <video> elements as
+    ; you scroll can leave it stuck reporting "paused" forever). That's why
+    ; State.extPlaying (the extension's own direct DOM observation) exists,
+    ; and why it's used as a full override below during normal/passive
+    ; monitoring — it can't get stuck like SMTC can.
+    ;
+    ; But for a user-initiated pause (LButton/b, both of which set
+    ; State.pendingExitFS the instant they fire) there's no video-swap
+    ; ambiguity at all — it's a plain pause of whatever's already correctly
+    ; playing in fullscreen — and for that specific transition, raw SMTC
+    ; turns out to react *faster* than the extension's bridge (content.js →
+    ; runtime message → background.js → WebSocket → Node → temp file → next
+    ; AHK tick has more hops than Chrome's own direct SMTC relay). Routing
+    ; this case through the override was adding a real, noticeable delay
+    ; between the click and fullscreen actually exiting. So: while a manual
+    ; exit is already pending, skip the override and use the faster raw
+    ; value; otherwise (normal passive monitoring, where the swap bug
+    ; actually lives) keep using the safer extPlaying override.
+    if State.matchedSite && !State.matchedSite.iframePlayer && !State.pendingExitFS
+        newBrowserIsPlaying := State.extPlaying
 
     if newBrowserIsPlaying {
         ; Playing — commit immediately, reset debounce counter
@@ -377,6 +386,7 @@ _EnterFullscreen() {
     State.browserInFullScreen := true
     State.manuallyExitedFS   := false
     _SetVideoHotkeys(true)
+    UpdateClockVisibility()  ; show now — before the startup-delay Sleep below
 
     if site.startupDelay {
         if !_UrlSeenForDelay(State.currentUrl) {
@@ -404,6 +414,7 @@ _ExitFullscreenByUser() {
     Send(site.fsKey)
     State.browserInFullScreen := false
     State.manuallyExitedFS   := true  ; tell eval not to re-enter
+    UpdateClockVisibility()
     _EvalVideoHotkeys()
 }
 
@@ -422,6 +433,7 @@ _ExitFullscreen() {
     Send(site.fsKey)
     State.browserInFullScreen := false
     ; manuallyExitedFS stays as-is — _EvalVideoHotkeys will clear it if needed
+    UpdateClockVisibility()
     _EvalVideoHotkeys()
 }
 
