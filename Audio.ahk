@@ -178,6 +178,190 @@ _GetWasapiSessionsDebug() {
     }
     return result
 }
+; ============ VOLUME LEVELER ============
+; Reactively attenuates Chrome's per-app volume so videos recorded
+; louder/quieter than each other come out sounding roughly consistent as you
+; scroll through a feed. This is attenuation-only — WASAPI's per-app volume
+; can scale a session's output down from whatever it already is, but it can
+; never boost a quiet video past its own natural peak. In practice that's
+; usually the actually-useful direction (evening out the occasional video
+; that's uncomfortably loud), rather than a true bidirectional loudness match.
+;
+; Runs only while actively watching one of our configured sites; resets
+; Chrome back to full volume otherwise so it doesn't stay quiet for
+; unrelated tabs/content once you navigate away.
+
+_UpdateVolumeLeveler() {
+    global State, CONFIG
+
+    if !CONFIG.VOLUME_LEVELER_ENABLED
+        return
+
+    active := State.matchedSite && State.browserIsPlaying
+    if !active {
+        if State.volumeMultiplier != 1.0 {
+            State.volumeMultiplier   := 1.0
+            State.volumeSmoothedPeak := 0.0
+            State.volumeDebug := _SetChromeVolume(1.0)
+        }
+        return
+    }
+
+    peak := _GetChromePeak()
+    if peak < 0
+        return  ; couldn't read a session this tick — leave things as-is
+
+    ; Exponential moving average — smooths out normal moment-to-moment peaks
+    ; (dialogue vs. silence) so the leveler reacts to a video's general
+    ; loudness rather than chasing every spike, which would sound like pumping.
+    a := CONFIG.VOLUME_LEVELER_SMOOTHING
+    State.volumeSmoothedPeak := (State.volumeSmoothedPeak * (1 - a)) + (peak * a)
+
+    error := CONFIG.VOLUME_LEVELER_TARGET - State.volumeSmoothedPeak
+    if Abs(error) < CONFIG.VOLUME_LEVELER_DEADZONE
+        return
+
+    step  := CONFIG.VOLUME_LEVELER_STEP
+    delta := error > 0 ? Min(error, step) : Max(error, -step)
+
+    newMultiplier := State.volumeMultiplier + delta
+    newMultiplier := Max(CONFIG.VOLUME_LEVELER_MIN, Min(1.0, newMultiplier))
+
+    if Abs(newMultiplier - State.volumeMultiplier) < 0.005
+        return
+
+    State.volumeMultiplier := newMultiplier
+    State.volumeDebug := _SetChromeVolume(newMultiplier)
+}
+
+; Returns Chrome's current audio peak (0.0–1.0) — the loudest of all
+; chrome.exe WASAPI sessions, since a tab's audio can live in any of several
+; renderer-process sessions depending on Chrome's site-isolation layout.
+; Returns -1 on failure or if no Chrome session currently exists.
+_GetChromePeak() {
+    global WASAPI_CLSIDS
+
+    try {
+        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
+        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
+
+        sessionManagerGUID := Buffer(16)
+        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
+        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
+        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
+        ComCall(3, sessionEnumPtr, "int*", &count := 0)
+
+        maxPeak := -1
+        Loop count {
+            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
+            try {
+                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
+                if !sessionControl2
+                    continue
+
+                ComCall(14, sessionControl2, "uint*", &pid := 0)
+                sessionControl2 := ""
+
+                if pid <= 0
+                    continue
+
+                try procName := ProcessGetName(pid)
+                catch
+                    continue
+
+                if !InStr(procName, "chrome")
+                    continue
+
+                meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
+                if !meterInfo
+                    continue
+
+                ComCall(3, meterInfo, "float*", &peak := 0.0)
+                meterInfo := ""
+
+                if peak > maxPeak
+                    maxPeak := peak
+            } finally {
+                ObjRelease(sessionControlPtr)
+            }
+        }
+
+        ObjRelease(sessionEnumPtr)
+        ObjRelease(sessionManagerPtr)
+        ObjRelease(devicePtr)
+        return maxPeak
+    } catch {
+    }
+    return -1
+}
+
+; Sets the WASAPI per-app volume multiplier (0.0–1.0) on every chrome.exe
+; audio session. Attenuation only — scales down from whatever Chrome/the
+; page's own volume already is; can never boost past that.
+;
+; Returns a diagnostic object {total, chromeSessions, volumeSet, error} so
+; the tooltip can show exactly how many sessions were enumerated, how many
+; matched chrome.exe, and how many actually accepted the volume call — since
+; peak-reading and volume-setting query different interfaces off the same
+; session pointer, one can silently fail while the other keeps working.
+_SetChromeVolume(multiplier) {
+    global WASAPI_CLSIDS
+    result := {total: 0, chromeSessions: 0, volumeSet: 0, error: ""}
+
+    try {
+        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
+        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
+
+        sessionManagerGUID := Buffer(16)
+        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
+        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
+        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
+        ComCall(3, sessionEnumPtr, "int*", &count := 0)
+        result.total := count
+
+        Loop count {
+            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
+            try {
+                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
+                if !sessionControl2
+                    continue
+
+                ComCall(14, sessionControl2, "uint*", &pid := 0)
+                sessionControl2 := ""
+
+                if pid <= 0
+                    continue
+
+                try procName := ProcessGetName(pid)
+                catch
+                    continue
+
+                if !InStr(procName, "chrome")
+                    continue
+
+                result.chromeSessions += 1
+
+                simpleVolume := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.ISimpleAudioVolume)
+                if !simpleVolume
+                    continue
+
+                ComCall(3, simpleVolume, "float", multiplier, "ptr", 0)  ; ISimpleAudioVolume::SetMasterVolume
+                simpleVolume := ""
+                result.volumeSet += 1
+            } finally {
+                ObjRelease(sessionControlPtr)
+            }
+        }
+
+        ObjRelease(sessionEnumPtr)
+        ObjRelease(sessionManagerPtr)
+        ObjRelease(devicePtr)
+    } catch as e {
+        result.error := e.Message
+    }
+    return result
+}
+
 ; ============ SONG CONTROLS ============
 
 _SongTogglePlayPause() {
