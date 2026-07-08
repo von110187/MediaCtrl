@@ -24,6 +24,26 @@ global CONFIG := {
     ; Lossless Scaling hotkey
     LOSSLESS_HOTKEY: "{F2}",
 
+    ; ── Volume leveler ──────────────────────────────────────────────────────
+    ; Reactively attenuates Chrome's per-app volume to smooth out videos that
+    ; are recorded louder/quieter than each other. This is attenuation-only —
+    ; Windows' per-app volume can turn a session down but can never boost it
+    ; past its original level, so this evens things out by quietly turning
+    ; down the loud ones, not by boosting the quiet ones.
+    ;
+    ; Tuned against observed Douyin/Bilibili peaks: most videos read ~0.1-0.3,
+    ; occasional ones spike to ~0.5-0.7. TARGET sits inside the normal 0.1-0.3
+    ; band (not above it) so loud outliers get pulled down to match what
+    ; "normal" actually sounds like, rather than just capped at some level
+    ; that's still louder than everything else.
+    VOLUME_LEVELER_ENABLED:   true,
+    VOLUME_LEVELER_INTERVAL:  200,   ; ms between samples — lower = more samples/sec = faster convergence
+    VOLUME_LEVELER_TARGET:    0.3,   ; target smoothed peak, 0.0–1.0 — center of the normal 0.1-0.3 range
+    VOLUME_LEVELER_DEADZONE:  0.02,  ; ignore error smaller than this — quiet/loud clusters are well separated, so this can be tight
+    VOLUME_LEVELER_SMOOTHING: 0.6,  ; EMA alpha — higher = reacts to current loudness faster, less lag behind the actual video
+    VOLUME_LEVELER_STEP:      0.3,  ; max volume-multiplier change per sample — higher = snaps to the right level faster
+    VOLUME_LEVELER_MIN:       0.35,  ; never attenuate below this multiplier — extra headroom now that target is lower
+
     ; Playable media sites matched against State.currentUrl
     ; fsKey       — key to toggle fullscreen for this site
     ; mouseCenter — move mouse to centre before entering fullscreen
@@ -34,7 +54,7 @@ global CONFIG := {
     SITES: {
         youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
         bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 1000,    holdSeek: true,  iframePlayer: false },
+        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 1000, holdSeek: true,  iframePlayer: false },
         anime:    { url: "cycani.org",   fsKey: "f", mouseCenter: true,  startupDelay: false, sleepMs: 0,    holdSeek: false, iframePlayer: true },
     },
 
@@ -48,5 +68,6 @@ global WASAPI_CLSIDS := {
     IAudioSessionManager2: "{77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F}",
     IAudioSessionControl2: "{bfb7ff88-7239-4fc9-8fa2-07c950be9c6d}",
     IAudioMeterInformation: "{C02216F6-8C67-4B5B-9D00-D008E73E0064}",
-    IAudioEndpointVolume: "{5CDF2C82-841E-4546-9722-0CF74078229A}"
+    IAudioEndpointVolume: "{5CDF2C82-841E-4546-9722-0CF74078229A}",
+    ISimpleAudioVolume: "{87CE5498-68D6-44E5-9215-6DA47EF883D8}"
 }

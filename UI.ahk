@@ -18,9 +18,9 @@
 ; share icon column that runs down the right edge in fullscreen).
 CLOCK_W               := 120
 CLOCK_H               := 40
-CLOCK_MARGIN_RIGHT     := 70
+CLOCK_MARGIN_RIGHT     := 87
 CLOCK_MARGIN_TOP       := 7
-CLOCK_TRANSPARENT_KEY  := "FF00FF"
+CLOCK_TRANSPARENT_KEY  := "000000"
 
 ClockGui      := ""
 ClockTextCtrl := ""
@@ -114,6 +114,25 @@ ShowTooltip() {
     t .= "CHROME`n" . LS
     t .= "Playing:    " . (State.browserIsPlaying    ? "▶ yes" : "⏸ no") . "`n"
     t .= "Fullscreen: " . (State.browserInFullScreen ? "yes"   : "no")   . "`n"
+    t .= "`n"
+
+    ; ── Volume leveler ────────────────────────────────────────
+    t .= "VOLUME LEVELER`n" . LS
+    t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
+    levelerActive := State.matchedSite && State.browserIsPlaying
+    t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
+    livePeak := _GetChromePeak()
+    t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no Chrome session found)") . "`n"
+    t .= "Smoothed:   " . Round(State.volumeSmoothedPeak, 4) . " (target " . CONFIG.VOLUME_LEVELER_TARGET . ")`n"
+    t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
+    ; Force a fresh diagnostic call every refresh (re-applies the current
+    ; multiplier — harmless) rather than showing whatever State.volumeDebug
+    ; happened to be left at, since the leveler only actually calls
+    ; _SetChromeVolume when the multiplier changes by a meaningful amount.
+    dbg := _SetChromeVolume(State.volumeMultiplier)
+    t .= "Sessions:   " . dbg.total . " total, " . dbg.chromeSessions . " chrome.exe, " . dbg.volumeSet . " volume-set OK`n"
+    if dbg.error != ""
+        t .= "Error:      " . dbg.error . "`n"
     t .= "`n"
 
     ; ── Video hotkeys ────────────────────────────────────────

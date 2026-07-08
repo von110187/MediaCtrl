@@ -46,6 +46,7 @@ SetTimer(MonitorTick, CONFIG.TIMER_IDLE)
 SetTimer(MonitorGame,       2000)
 SetTimer(ShowTooltip,       500)
 SetTimer(UpdateClockOverlay, 1000)
+SetTimer(_UpdateVolumeLeveler, CONFIG.VOLUME_LEVELER_INTERVAL)
 
 ; Adam D3V shutdown check — only fires once, 30 min after startup
 if (State.activeSpeaker = "Adam D3V")

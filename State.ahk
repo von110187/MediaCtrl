@@ -38,6 +38,11 @@ global State := {
     ; StateEngine.ahk _UpdateMediaState) SMTC media-session relay.
     extPlaying: false,
 
+    ; Volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
+    volumeSmoothedPeak: 0.0,
+    volumeMultiplier:   1.0,
+    volumeDebug:        "",  ; last _SetChromeVolume() diagnostic result, for the F6 tooltip
+
     ; Set true by LButton/b while playing — exits fullscreen once audio stops
     pendingExitFS: false,
     ; while audio is still playing. Prevents auto re-enter until audio stops.
