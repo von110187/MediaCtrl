@@ -206,23 +206,21 @@ _UpdateMediaState(sessions) {
     ; when the tracked element changes (Douyin swapping <video> elements as
     ; you scroll can leave it stuck reporting "paused" forever). That's why
     ; State.extPlaying (the extension's own direct DOM observation) exists,
-    ; and why it's used as a full override below during normal/passive
-    ; monitoring — it can't get stuck like SMTC can.
+    ; and why it's OR'd in below: if either source says "playing", trust it.
     ;
-    ; But for a user-initiated pause (LButton/b, both of which set
-    ; State.pendingExitFS the instant they fire) there's no video-swap
-    ; ambiguity at all — it's a plain pause of whatever's already correctly
-    ; playing in fullscreen — and for that specific transition, raw SMTC
-    ; turns out to react *faster* than the extension's bridge (content.js →
-    ; runtime message → background.js → WebSocket → Node → temp file → next
-    ; AHK tick has more hops than Chrome's own direct SMTC relay). Routing
-    ; this case through the override was adding a real, noticeable delay
-    ; between the click and fullscreen actually exiting. So: while a manual
-    ; exit is already pending, skip the override and use the faster raw
-    ; value; otherwise (normal passive monitoring, where the swap bug
-    ; actually lives) keep using the safer extPlaying override.
-    if State.matchedSite && !State.matchedSite.iframePlayer && !State.pendingExitFS
-        newBrowserIsPlaying := State.extPlaying
+    ; This applies unconditionally, including while a click-triggered
+    ; pendingExitFS is armed. An earlier version skipped the override in that
+    ; window and used the raw SMTC value instead, reasoning that it reacts
+    ; faster to a genuine pause than extPlaying's extension→WebSocket→file
+    ; round trip. But raw SMTC being unreliable on Douyin is exactly the
+    ; problem extPlaying exists to fix, and trusting it specifically at the
+    ; one moment correctness matters most — deciding whether a click should
+    ; exit fullscreen — meant ANY click anywhere on the page (comments, likes,
+    ; share) could look like "stopped" and trigger an exit, since raw SMTC
+    ; can already be sitting on a stale "paused" reading regardless of what
+    ; was actually clicked. Reliability wins here over shaving off latency.
+    if State.matchedSite && !State.matchedSite.iframePlayer
+        newBrowserIsPlaying := newBrowserIsPlaying || State.extPlaying
 
     if newBrowserIsPlaying {
         ; Playing — commit immediately, reset debounce counter
