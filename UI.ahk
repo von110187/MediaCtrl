@@ -1,3 +1,95 @@
+; ============ FULLSCREEN CLOCK OVERLAY ============
+; A small always-on-top, click-through clock at the top-right of the screen,
+; shown only while in fullscreen video — fullscreen hides Windows' taskbar
+; clock, so this fills the gap.
+;
+; +E0x20 = WS_EX_TRANSPARENT: clicks pass straight through to the browser
+; underneath, so this never interferes with the LButton fullscreen-exit logic
+; or anything else. +ToolWindow keeps it out of the taskbar/Alt+Tab.
+;
+; No background box: the Gui's BackColor is a color-keyed "magic" color
+; (magenta — unlikely to appear in real video content) that WinSetTransColor
+; makes fully transparent, so only the white text itself is visible, floating
+; over the video.
+;
+; Tweak these if you want a different size/position — CLOCK_MARGIN_RIGHT is
+; the gap between the box's right edge and the screen's right edge; increase
+; it to move the clock further left (e.g. to clear Douyin's own like/comment/
+; share icon column that runs down the right edge in fullscreen).
+CLOCK_W               := 120
+CLOCK_H               := 40
+CLOCK_MARGIN_RIGHT     := 70
+CLOCK_MARGIN_TOP       := 7
+CLOCK_TRANSPARENT_KEY  := "FF00FF"
+
+ClockGui      := ""
+ClockTextCtrl := ""
+_clockShown   := false
+
+InitClockOverlay() {
+    global ClockGui, ClockTextCtrl
+    global CLOCK_W, CLOCK_H, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP, CLOCK_TRANSPARENT_KEY
+
+    ClockGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20")
+    ClockGui.BackColor := CLOCK_TRANSPARENT_KEY
+    ClockGui.MarginX := 0
+    ClockGui.MarginY := 0
+
+    ClockGui.SetFont("s20 cWhite Bold", "Segoe UI")
+    ClockTextCtrl := ClockGui.AddText("Center w" . CLOCK_W . " h" . CLOCK_H, FormatTime(, "h:mm"))
+
+    x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
+    ; Show once (creates the real window so WinSetTransColor has something to
+    ; target), then explicitly Hide it. Passing "Hide" inline together with
+    ; x/y/w/h in the same Show() call doesn't reliably keep a brand-new Gui
+    ; hidden on its very first show — so the clock was appearing immediately
+    ; at script start. Since the tracked _clockShown var still started as
+    ; false, the update loop never noticed the mismatch (and never updates the
+    ; text while it thinks the clock is hidden), until a real fullscreen entry
+    ; finally resynced it — matching "shows immediately, doesn't update, until
+    ; I play a video."
+    ClockGui.Show("NoActivate x" . x . " y" . CLOCK_MARGIN_TOP . " w" . CLOCK_W . " h" . CLOCK_H)
+    WinSetTransColor(CLOCK_TRANSPARENT_KEY, "ahk_id " . ClockGui.Hwnd)
+    ClockGui.Hide()
+}
+
+; UpdateClockVisibility() is called directly from StateEngine.ahk's
+; _EnterFullscreen/_ExitFullscreenByUser/_ExitFullscreen the instant
+; browserInFullScreen actually changes, so show/hide has zero delay. The
+; SetTimer-driven UpdateClockOverlay() below still exists as a once-a-second
+; safety net (refreshes the displayed text, and re-checks visibility in case
+; some path ever changes browserInFullScreen without going through those
+; three functions) — but it's no longer the primary trigger, so the up-to-1s
+; lag that used to show up between actual fullscreen changes and the clock
+; reacting is gone.
+UpdateClockVisibility() {
+    global ClockGui, ClockTextCtrl, State, _clockShown
+    global CLOCK_W, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP
+    if !ClockGui
+        return
+
+    if State.browserInFullScreen {
+        if !_clockShown {
+            ClockTextCtrl.Value := FormatTime(, "h:mm")
+            x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
+            ClockGui.Show("NoActivate x" . x . " y" . CLOCK_MARGIN_TOP)
+            _clockShown := true
+        }
+    } else if _clockShown {
+        ClockGui.Hide()
+        _clockShown := false
+    }
+}
+
+UpdateClockOverlay() {
+    global ClockGui, ClockTextCtrl
+    if !ClockGui
+        return
+
+    ClockTextCtrl.Value := FormatTime(, "h:mm")
+    UpdateClockVisibility()
+}
+
 ; ============ TOOLTIP ============
 ; Debug-relevant state only. Early exit when tooltip is off.
 

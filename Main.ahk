@@ -25,6 +25,9 @@ _DeferredBridgeStart() {
 ; Register dynamic video hotkeys as Off — SetVideoHotkeys() controls them
 InitVideoHotkeys()
 
+; Fullscreen clock overlay — hidden until State.browserInFullScreen is true
+InitClockOverlay()
+
 ; Register OS-level media events
 RegisterMediaEvents()
 
@@ -40,8 +43,9 @@ State.currentInterval := CONFIG.TIMER_IDLE
 SetTimer(MonitorTick, CONFIG.TIMER_IDLE)
 
 ; Lazy polling timers
-SetTimer(MonitorGame,    2000)
-SetTimer(ShowTooltip,    500)
+SetTimer(MonitorGame,       2000)
+SetTimer(ShowTooltip,       500)
+SetTimer(UpdateClockOverlay, 1000)
 
 ; Adam D3V shutdown check — only fires once, 30 min after startup
 if (State.activeSpeaker = "Adam D3V")
