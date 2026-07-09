@@ -8,9 +8,19 @@ global CONFIG := {
     SONG:    "spotify",  ; matched against SourceAppUserModelId / process name
     BROWSER: "chrome",   ; matched against SourceAppUserModelId / process name
 
+    ; win32 window class — shared by all Chromium-based browsers (Chrome,
+    ; Edge, Brave, etc.) since they share the same rendering engine. Only
+    ; needs changing if BROWSER above is switched to a non-Chromium browser.
+    BROWSER_WINDOW_CLASS: "Chrome_WidgetWin_1",
+
+    ; Window title of the song web app/PWA when installed as its own app
+    ; window (used to activate it and send play/skip keys when no SMTC
+    ; session exists yet — see _ActivateSongPWA in Audio.ahk).
+    SONG_PWA_TITLE: "Spotify - Web Player",
+
     ; How many consecutive not-playing ticks before we treat the song browser as stopped.
     ; At TIMER_ACTIVE=250ms, 1 tick = 250ms debounce — fast response, still absorbs single glitches.
-    CHROME_STOP_DEBOUNCE: 1,
+    BROWSER_STOP_DEBOUNCE: 1,
 
     ; How many consecutive ticks the current URL must be missing from playingTabs
     ; before Gate 2 (_EvalVideoHotkeys) treats the tab as actually left/not-playable.

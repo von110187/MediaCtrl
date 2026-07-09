@@ -201,7 +201,7 @@ _UpdateMediaState(sessions) {
 
     State.browserPlaybackStatus := newBrowserStatus
 
-    ; Windows' SMTC status for the browser is Chrome's own guess about which
+    ; Windows' SMTC status for the browser is the browser's own guess about which
     ; <video> element backs the OS media session — unreliable specifically
     ; when the tracked element changes (Douyin swapping <video> elements as
     ; you scroll can leave it stuck reporting "paused" forever). That's why
@@ -230,9 +230,9 @@ _UpdateMediaState(sessions) {
             _EvalVideoHotkeys()
         }
     } else {
-        ; Not playing — only commit after CHROME_STOP_DEBOUNCE consecutive ticks
+        ; Not playing — only commit after BROWSER_STOP_DEBOUNCE consecutive ticks
         State.browserNotPlayingTicks += 1
-        if State.browserIsPlaying && State.browserNotPlayingTicks >= CONFIG.CHROME_STOP_DEBOUNCE {
+        if State.browserIsPlaying && State.browserNotPlayingTicks >= CONFIG.BROWSER_STOP_DEBOUNCE {
             State.browserIsPlaying := false
             ; F5 refresh: audio stopped because page is reloading — unblock auto re-entry
             if State.pendingF5 {

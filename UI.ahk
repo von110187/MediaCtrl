@@ -111,7 +111,7 @@ ShowTooltip() {
     t .= "`n"
 
     ; ── browser ───────────────────────────────────────────────
-    t .= "CHROME`n" . LS
+    t .= StrUpper(CONFIG.BROWSER) . "`n" . LS
     t .= "Playing:    " . (State.browserIsPlaying    ? "▶ yes" : "⏸ no") . "`n"
     t .= "Fullscreen: " . (State.browserInFullScreen ? "yes"   : "no")   . "`n"
     t .= "`n"
@@ -122,7 +122,7 @@ ShowTooltip() {
     levelerActive := State.matchedSite && State.browserIsPlaying
     t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
     livePeak := _GetChromePeak()
-    t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no Chrome session found)") . "`n"
+    t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
     t .= "Smoothed:   " . Round(State.volumeSmoothedPeak, 4) . " (target " . CONFIG.VOLUME_LEVELER_TARGET . ")`n"
     t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
     ; Force a fresh diagnostic call every refresh (re-applies the current
@@ -130,7 +130,7 @@ ShowTooltip() {
     ; happened to be left at, since the leveler only actually calls
     ; _SetChromeVolume when the multiplier changes by a meaningful amount.
     dbg := _SetChromeVolume(State.volumeMultiplier)
-    t .= "Sessions:   " . dbg.total . " total, " . dbg.chromeSessions . " chrome.exe, " . dbg.volumeSet . " volume-set OK`n"
+    t .= "Sessions:   " . dbg.total . " total, " . dbg.chromeSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
     if dbg.error != ""
         t .= "Error:      " . dbg.error . "`n"
     t .= "`n"
@@ -158,7 +158,7 @@ ShowTooltip() {
     t .= "`n"
 
     ; ── Spotify ───────────────────────────────────────────────
-    t .= "SPOTIFY`n" . LS
+    t .= StrUpper(CONFIG.SONG) . "`n" . LS
     t .= "Playing: " . (State.songIsPlaying ? "▶ yes" : "⏸ no") . "`n"
     try {
         for session in State.sessions {
