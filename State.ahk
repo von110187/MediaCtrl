@@ -25,7 +25,7 @@ global State := {
     browserPlaybackStatus:   0,     ; last known PlaybackStatus for the browser session
 
     ; Debounce counter — how many consecutive ticks browser has reported not-playing.
-    ; We only commit the state change after CHROME_STOP_DEBOUNCE ticks to avoid latency glitches.
+    ; We only commit the state change after BROWSER_STOP_DEBOUNCE ticks to avoid latency glitches.
     browserNotPlayingTicks: 0,
     browserInFullScreen: false,
 
@@ -34,14 +34,14 @@ global State := {
     urlNotPlayableTicks: 0,
 
     ; Ground-truth "is the active video actually playing" as observed directly
-    ; by content.js, bypassing Chrome/Windows' own (sometimes unreliable, see
+    ; by content.js, bypassing the browser/Windows' own (sometimes unreliable, see
     ; StateEngine.ahk _UpdateMediaState) SMTC media-session relay.
     extPlaying: false,
 
     ; Volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
     volumeSmoothedPeak: 0.0,
     volumeMultiplier:   1.0,
-    volumeDebug:        "",  ; last _SetChromeVolume() diagnostic result, for the F6 tooltip
+    volumeDebug:        "",  ; last _SetBrowserVolume() diagnostic result, for the F6 tooltip
 
     ; Set true by LButton/b while playing — exits fullscreen once audio stops
     pendingExitFS: false,

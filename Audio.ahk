@@ -77,7 +77,7 @@ _CheckSongOutro(session) {
 ; sessions and returns the highest peak among them. Exact if Spotify is the
 ; only audio source in Edge; still a valid "is Edge silent?" signal otherwise.
 _GetSongPeak() {
-    global WASAPI_CLSIDS
+    global WASAPI_CLSIDS, CONFIG
 
     try {
         enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
@@ -107,7 +107,7 @@ _GetSongPeak() {
                 catch
                     continue
 
-                if !InStr(procName, "Spotify")
+                if !InStr(procName, CONFIG.SONG)
                     continue
 
                 meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
@@ -239,7 +239,7 @@ _UpdateVolumeLeveler() {
 ; renderer-process sessions depending on Chrome's site-isolation layout.
 ; Returns -1 on failure or if no Chrome session currently exists.
 _GetChromePeak() {
-    global WASAPI_CLSIDS
+    global WASAPI_CLSIDS, CONFIG
 
     try {
         enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
@@ -269,7 +269,7 @@ _GetChromePeak() {
                 catch
                     continue
 
-                if !InStr(procName, "chrome")
+                if !InStr(procName, CONFIG.BROWSER)
                     continue
 
                 meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
@@ -305,7 +305,7 @@ _GetChromePeak() {
 ; peak-reading and volume-setting query different interfaces off the same
 ; session pointer, one can silently fail while the other keeps working.
 _SetChromeVolume(multiplier) {
-    global WASAPI_CLSIDS
+    global WASAPI_CLSIDS, CONFIG
     result := {total: 0, chromeSessions: 0, volumeSet: 0, error: ""}
 
     try {
@@ -336,7 +336,7 @@ _SetChromeVolume(multiplier) {
                 catch
                     continue
 
-                if !InStr(procName, "chrome")
+                if !InStr(procName, CONFIG.BROWSER)
                     continue
 
                 result.chromeSessions += 1
@@ -372,8 +372,8 @@ _SongTogglePlayPause() {
             return
         }
     }
-    ; No session yet — Spotify PWA is open but hasn't played anything (no SMTC session exists).
-    _ActivateSpotifyPWA("{Space}")
+    ; No session yet — song PWA is open but hasn't played anything (no SMTC session exists).
+    _ActivateSongPWA("{Space}")
 }
 
 _SongSkipNext() {
@@ -384,8 +384,8 @@ _SongSkipNext() {
             return
         }
     }
-    ; No session — activate Spotify PWA and send Ctrl+Right
-    _ActivateSpotifyPWA("^{Right}")
+    ; No session — activate song PWA and send Ctrl+Right
+    _ActivateSongPWA("^{Right}")
 }
 
 _SongSkipPrevious() {
@@ -399,16 +399,20 @@ _SongSkipPrevious() {
             return
         }
     }
-    ; No session — activate Spotify PWA and send Ctrl+Left then Space
-    _ActivateSpotifyPWA("^{Left}", "{Space}")
+    ; No session — activate song PWA and send Ctrl+Left then Space
+    _ActivateSongPWA("^{Left}", "{Space}")
 }
 
-; Activates the Spotify PWA window, sends a key (and optional second key after a delay), then restores focus.
-_ActivateSpotifyPWA(key, key2 := "", delay := 2500) {
-    if WinExist("Spotify - Web Player ahk_class Chrome_WidgetWin_1") {
+; Activates the song web app/PWA window, sends a key (and optional second key
+; after a delay), then restores focus. Window title/class come from
+; CONFIG.SONG_PWA_TITLE / CONFIG.BROWSER_WINDOW_CLASS.
+_ActivateSongPWA(key, key2 := "", delay := 2500) {
+    global CONFIG
+    winTitle := CONFIG.SONG_PWA_TITLE . " ahk_class " . CONFIG.BROWSER_WINDOW_CLASS
+    if WinExist(winTitle) {
         prevWin := WinExist("A")
-        WinActivate("Spotify - Web Player ahk_class Chrome_WidgetWin_1")
-        WinWaitActive("Spotify - Web Player ahk_class Chrome_WidgetWin_1", , 1)
+        WinActivate(winTitle)
+        WinWaitActive(winTitle, , 1)
         Send(key)
         if key2 != "" {
             Sleep(delay)

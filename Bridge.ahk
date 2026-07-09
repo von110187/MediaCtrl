@@ -1,6 +1,6 @@
 ; ============ BRIDGE SERVER ============
 ; Runs a local Node.js server:
-;   WS  port 9224 — Chrome extension pushes URL + playable tabs
+;   WS  port 9224 — browser extension pushes URL + playable tabs
 ;   HTTP port 9223 — AHK sends commands to extension (speed, cor5, etc.)
 ;
 ; mediactrl_bridge.js and node_modules live next to the script (A_ScriptDir)
@@ -85,7 +85,7 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// WebSocket server — Chrome extension connects here
+// WebSocket server — browser extension connects here
 const wss = new WebSocketServer({ port: 9224, host: "127.0.0.1" });
 
 wss.on("connection", (ws) => {
