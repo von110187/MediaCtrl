@@ -20,7 +20,7 @@ function urlLooksPlayable(hostname, pathname) {
         return pathname.startsWith("/watch") || pathname.includes("/shorts/");
     }
     if (/(^|\.)bilibili\.com$/.test(hostname)) {
-        return pathname.includes("/video");
+        return pathname.includes("/video/");
     }
     if (/(^|\.)cycani\.org$/.test(hostname)) {
         return pathname.includes("/watch/");
