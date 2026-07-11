@@ -18,8 +18,8 @@
 ; share icon column that runs down the right edge in fullscreen).
 CLOCK_W               := 120
 CLOCK_H               := 40
-CLOCK_MARGIN_RIGHT     := 87
-CLOCK_MARGIN_TOP       := 7
+CLOCK_MARGIN_RIGHT     := 80
+CLOCK_MARGIN_TOP       := 0
 CLOCK_TRANSPARENT_KEY  := "000000"
 
 ClockGui      := ""
