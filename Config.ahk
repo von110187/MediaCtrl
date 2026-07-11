@@ -47,12 +47,12 @@ global CONFIG := {
     ; "normal" actually sounds like, rather than just capped at some level
     ; that's still louder than everything else.
     VOLUME_LEVELER_ENABLED:   true,
-    VOLUME_LEVELER_INTERVAL:  200,   ; ms between samples — lower = more samples/sec = faster convergence
+    VOLUME_LEVELER_INTERVAL:  100,   ; ms between samples — lower = more samples/sec = faster convergence
     VOLUME_LEVELER_TARGET:    0.3,   ; target smoothed peak, 0.0–1.0 — center of the normal 0.1-0.3 range
-    VOLUME_LEVELER_DEADZONE:  0.02,  ; ignore error smaller than this — quiet/loud clusters are well separated, so this can be tight
-    VOLUME_LEVELER_SMOOTHING: 0.6,  ; EMA alpha — higher = reacts to current loudness faster, less lag behind the actual video
-    VOLUME_LEVELER_STEP:      0.3,  ; max volume-multiplier change per sample — higher = snaps to the right level faster
-    VOLUME_LEVELER_MIN:       0.35,  ; never attenuate below this multiplier — extra headroom now that target is lower
+    VOLUME_LEVELER_DEADZONE:  0.01,  ; ignore error smaller than this — quiet/loud clusters are well separated, so this can be tight
+    VOLUME_LEVELER_SMOOTHING: 0.08,  ; EMA alpha — higher = reacts to current loudness faster, less lag behind the actual video
+    VOLUME_LEVELER_STEP:      0.1,  ; max volume-multiplier change per sample — higher = snaps to the right level faster
+    VOLUME_LEVELER_MIN:       0.3,  ; never attenuate below this multiplier — extra headroom now that target is lower
 
     ; Playable media sites matched against State.currentUrl
     ; fsKey       — key to toggle fullscreen for this site
