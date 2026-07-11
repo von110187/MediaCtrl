@@ -77,30 +77,39 @@ $AppsKey:: {
     Run('"D:\Program Files\Epic Games\ZenlessZoneZero\games\ZenlessZoneZero Game\ZenlessZoneZero.exe"')
 }
 
-; ── LButton: exit fullscreen when a click pauses browser playback ─────────────
-; Only acts when already in fullscreen and browser was playing.
-; Mirrors _HK_b: arms pendingExitFS so _EvalVideoHotkeys exits once audio stops.
-; No direct _ExitFullscreenByUser() call — avoids races with the event path.
+; ── LButton: exit fullscreen when clicking the <video> element ────────────────
+; Only acts when already in fullscreen and browser was playing, and the click
+; itself landed on the page's <video> element (not comments, likes, share
+; buttons, the seek bar, etc). AHK can't inspect the page DOM directly, so
+; content.js reports the click's target through the extension → WebSocket
+; bridge into ahk_video_click.txt.
 ;
-; Uses State.browserIsPlaying (which folds in the extension's own ground-truth
-; extPlaying — see _UpdateMediaState) rather than the raw
-; State.browserPlaybackStatus SMTC number. On Douyin that raw number can get
-; stuck never reaching 4/Playing even while genuinely playing, which silently
-; broke this check: the click would pause the video (the page's own native
-; behavior) but pendingExitFS never armed, so fullscreen never exited.
+; That report can't be read synchronously here — it has to travel content
+; script → background → WebSocket → file, which lands a little while after
+; this hotkey fires. So the flag file is cleared immediately (wiping out any
+; stale report from an earlier, unrelated click) and re-checked a moment
+; later once the round trip has had time to land.
 ~LButton:: {
     global State
+    try FileDelete(A_Temp . "\ahk_video_click.txt")
+
     if !State.browserInFullScreen
         return
     if !State.browserIsPlaying
         return
-    State.pendingExitFS := true
-    SetTimer(_ClearPendingExitFS, -1000)
+    SetTimer(_CheckVideoClickExit, -200)
 }
 
-_ClearPendingExitFS() {
+_CheckVideoClickExit() {
     global State
-    State.pendingExitFS := false
+    if !State.browserInFullScreen || !State.browserIsPlaying
+        return
+    try {
+        if Trim(FileRead(A_Temp . "\ahk_video_click.txt")) = "1"
+            _ExitFullscreenByUser()
+    } catch {
+        ; no report arrived — not a video click (or extension disconnected)
+    }
 }
 
 ; ── Ctrl+W: send losslessHotkey when in fullscreen, then let browser close the tab ─
