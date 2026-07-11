@@ -209,15 +209,24 @@ _UpdateVolumeLeveler() {
 
     peak := _GetChromePeak()
     if peak < 0
-        return  ; couldn't read a session this tick — leave things as-is
+        return  ; couldn't read a session this tick
 
-    ; Exponential moving average — smooths out normal moment-to-moment peaks
-    ; (dialogue vs. silence) so the leveler reacts to a video's general
-    ; loudness rather than chasing every spike, which would sound like pumping.
+    ; 1. Keep the Exponential Moving Average to smooth out quick dialogue gaps
     a := CONFIG.VOLUME_LEVELER_SMOOTHING
     State.volumeSmoothedPeak := (State.volumeSmoothedPeak * (1 - a)) + (peak * a)
 
-    error := CONFIG.VOLUME_LEVELER_TARGET - State.volumeSmoothedPeak
+    ; 2. Calculate the IDEAL multiplier directly using pre-fader math
+    if State.volumeSmoothedPeak < 0.01 {
+        targetMultiplier := 1.0  ; Avoid division by zero during absolute silence
+    } else {
+        targetMultiplier := CONFIG.VOLUME_LEVELER_TARGET / State.volumeSmoothedPeak
+    }
+
+    ; 3. Clamp the ideal target between your min floor (0.3) and max ceiling (1.0)
+    targetMultiplier := Max(CONFIG.VOLUME_LEVELER_MIN, Min(1.0, targetMultiplier))
+
+    ; 4. Use the step limit to smoothly transition toward the target multiplier
+    error := targetMultiplier - State.volumeMultiplier
     if Abs(error) < CONFIG.VOLUME_LEVELER_DEADZONE
         return
 
