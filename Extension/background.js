@@ -5,8 +5,29 @@ let ws          = null;
 let reconnTimer = null;
 let lastPongAt  = 0;
 
-// tabId → url, for tabs that have a media element
+// tabId → url, for tabs that have a media element (in ANY of their frames —
+// see all_frames note below)
 const tabMediaMap = new Map();
+
+// The most recently activated (i.e. clicked/focused) tab, tracked directly
+// via chrome.tabs.onActivated/onUpdated rather than queried on demand via
+// {active:true, currentWindow:true} at command time. Queried on demand is
+// what speed_* used to broadcast to every tab with media to work around
+// (see sendCommandToVideoFrame below) — Chrome's "active tab" can be
+// ambiguous while the browser window is in fullscreen (no on-screen tab
+// strip to click, focus can sit oddly), so a live-tracked value here is a
+// more reliable target than trusting a query result at the moment a command
+// arrives.
+let lastActiveTabId = null;
+
+// tabId → frameId, for the specific frame within a tab that most recently
+// reported owning a <video> element (content.js's "frameHasVideo" message).
+// Needed because content.js now runs in every frame (all_frames: true in
+// manifest.json), not just the top one — some sites (cycani.org) put their
+// real <video> inside a cross-origin player iframe, so a command like
+// seek_0/speed_* has to be targeted at that specific frame, not the tab's
+// top frame, or it'll silently find no <video> and do nothing.
+const tabVideoFrameMap = new Map();
 
 function connect() {
     if (reconnTimer) { clearTimeout(reconnTimer); reconnTimer = null; }
@@ -20,6 +41,15 @@ function connect() {
         // after a service-worker restart. reinjectAllTabs() below confirms
         // each tab's state with retries and pushes once done, so the list
         // rebuilds correctly without going through a false-empty state.
+        //
+        // lastActiveTabId is also freshly null after a service-worker
+        // restart (onActivated won't fire again for a tab the user already
+        // switched to before this worker instance existed) — seed it here
+        // so a speed_* command arriving before the user's next tab switch
+        // still has a real target instead of falling through to a live query.
+        chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+            if (tab) lastActiveTabId = tab.id;
+        });
         reinjectAllTabs();
         pushCurrentTab();
     };
@@ -35,23 +65,22 @@ function connect() {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (tab) chrome.tabs.update(tab.id, { url: data.navigate });
             } else if (data.command) {
-                // For speed commands, send to all tabs with media so it works
-                // even when the tab isn't detected as active (e.g. in fullscreen).
-                // For other commands, fall back to the active tab.
-                if (data.command.startsWith("speed_") && tabMediaMap.size > 0) {
-                    for (const tabId of tabMediaMap.keys()) {
-                        try {
-                            await chrome.tabs.sendMessage(tabId, { command: data.command });
-                        } catch (e) {}
-                    }
-                } else {
-                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                    if (tab) {
-                        try {
-                            await chrome.tabs.sendMessage(tab.id, { command: data.command });
-                        } catch (e) {}
-                    }
-                }
+                // Previously, speed_* was broadcast to every tab in
+                // tabMediaMap to work around {active:true} being unreliable
+                // while the browser is in fullscreen — but that meant
+                // pressing 1/2/3/4 changed playback speed on every open
+                // tab with media, not just the one being watched (e.g.
+                // YouTube in the background would speed up right along with
+                // the cycani.org tab actually in fullscreen). Route to a
+                // single target tab instead: lastActiveTabId, tracked live
+                // via onActivated/onUpdated below, which doesn't depend on
+                // querying "active" at the moment the command arrives and so
+                // isn't subject to whatever fullscreen-focus ambiguity the
+                // broadcast was originally guarding against.
+                const targetTabId = tabMediaMap.has(lastActiveTabId)
+                    ? lastActiveTabId
+                    : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+                if (targetTabId !== undefined) await sendCommandToVideoFrame(targetTabId, data.command);
             }
         } catch (e) {}
     };
@@ -60,11 +89,30 @@ function connect() {
     ws.onerror = () => { ws.close(); };
 }
 
+// Sends a video-targeted command (seek_0, speed_*) to the frame within tabId
+// that last reported owning a <video> (tabVideoFrameMap). If no frame has
+// reported one yet (e.g. a very fresh page where frameHasVideo hasn't fired),
+// falls back to sendMessage with no frameId, which fans the command out to
+// every frame in the tab — harmless, since content.js's handlers for these
+// commands call getActiveVideo(), which simply no-ops in any frame that
+// doesn't have a <video>.
+async function sendCommandToVideoFrame(tabId, command) {
+    const frameId = tabVideoFrameMap.get(tabId);
+    try {
+        if (frameId !== undefined) {
+            await chrome.tabs.sendMessage(tabId, { command }, { frameId });
+        } else {
+            await chrome.tabs.sendMessage(tabId, { command });
+        }
+    } catch (e) {}
+}
+
 // ── Content script messages ───────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
     if (!sender.tab) return;
     const { id: tabId, url } = sender.tab;
+    const frameId = sender.frameId;
 
     if (msg.type === "mediaPresence") {
         if (!url?.startsWith("http")) return;
@@ -81,6 +129,21 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     } else if (msg.type === "playbackState") {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ extPlaying: msg.isPlaying }));
+    } else if (msg.type === "videoClick") {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ videoClick: true }));
+    } else if (msg.type === "frameHasVideo") {
+        // Record/clear which frame in this tab currently owns a <video>, so
+        // seek_0/speed_* commands can be routed straight to it. Only ever
+        // clear the mapping if the frame that's clearing it is the one
+        // currently recorded — otherwise an unrelated frame's "false" report
+        // (e.g. a stale iframe navigating away) could wipe out a different,
+        // still-valid frame's entry.
+        if (msg.hasVideo) {
+            tabVideoFrameMap.set(tabId, frameId);
+        } else if (tabVideoFrameMap.get(tabId) === frameId) {
+            tabVideoFrameMap.delete(tabId);
+        }
     }
 });
 
@@ -91,6 +154,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
         tabMediaMap.delete(tabId);
         pushPlayableTabs();
     }
+    tabVideoFrameMap.delete(tabId);
+    if (lastActiveTabId === tabId) lastActiveTabId = null;
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
@@ -100,9 +165,17 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     // during SPA navigations (e.g. YouTube) before the new page reports in.
     if (change.url || change.status === "complete")
         pushCurrentTab();
+    // A real navigation invalidates any previously recorded video frame for
+    // this tab — the new page (and its frames) will re-report via
+    // frameHasVideo once loaded, so stale routing doesn't linger.
+    if (change.url)
+        tabVideoFrameMap.delete(tabId);
 });
 
-chrome.tabs.onActivated.addListener(pushCurrentTab);
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+    lastActiveTabId = tabId;
+    pushCurrentTab();
+});
 
 // ── Push helpers ──────────────────────────────────────────────────────────────
 
@@ -143,8 +216,15 @@ async function reinjectAllTabs() {
 
 async function reportTabState(tabId, url, attempt = 1) {
     try {
+        // allFrames: true — matches manifest.json's all_frames:true for the
+        // static injection. Some sites (cycani.org) put their real <video>
+        // inside a cross-origin player iframe, invisible to a top-frame-only
+        // injection; re-injecting into every frame here keeps this recovery
+        // path (used after an AHK/bridge reload) consistent with normal
+        // page-load injection, instead of silently losing video-frame
+        // detection specifically on reconnect.
         await chrome.scripting.executeScript({
-            target: { tabId, allFrames: false },
+            target: { tabId, allFrames: true },
             files: ["content.js"],
         });
     } catch (e) {
@@ -154,7 +234,16 @@ async function reportTabState(tabId, url, attempt = 1) {
     }
 
     try {
-        const response = await chrome.tabs.sendMessage(tabId, { command: "reportState" });
+        // frameId: 0 is always the top frame. hasMedia/cor5Href are top-frame-
+        // only concerns (see content.js's "Frame awareness" notes) — without
+        // pinning this to frameId 0, sendMessage would fan out to every frame
+        // in the tab (including the video iframe on sites like cycani.org)
+        // and, per Chrome's own docs, resolve to whichever frame answers
+        // first, which could just as easily be a subframe's hasMedia:false.
+        // A subframe with the real <video> reports itself separately and
+        // asynchronously via its own "frameHasVideo" push once its copy of
+        // content.js runs, so it doesn't need to be polled here.
+        const response = await chrome.tabs.sendMessage(tabId, { command: "reportState" }, { frameId: 0 });
         console.log(`[MediaCtrl] tab ${tabId} (${url}): reportState ->`, response);
         if (response?.hasMedia) tabMediaMap.set(tabId, url);
         else tabMediaMap.delete(tabId);
