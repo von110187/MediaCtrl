@@ -17,8 +17,7 @@ F7:: {
             _ExitFullscreenByUser()
         _SetVideoHotkeys(false)
     } else {
-        ; Toggled back on — clear the manual-exit flag so _EvalVideoHotkeys
-        ; can auto re-enter fullscreen if conditions are met
+        ; clear manual-exit flag so auto-fullscreen can re-trigger
         State.manuallyExitedFS := false
         _EvalVideoHotkeys()
     }
@@ -29,9 +28,6 @@ F7:: {
 }
 
 ; ── F8: Exit fullscreen + trigger next-episode button ────────────────────────
-; Reads the <a class="cor5"> href pushed by the extension and navigates directly.
-; Falls back to MouseClick if no href is available.
-; Always ends with MouseMove to screen centre.
 F8:: {
     global State, CONFIG
     if State.browserInFullScreen
@@ -39,7 +35,7 @@ F8:: {
     Sleep(300)
 
     if State.cor5Href != "" {
-        ; Build absolute URL from the stored href (may be relative like /watch/...)
+        ; cor5Href may be relative (e.g. /watch/...)
         baseUrl := RegExReplace(State.currentUrl, "(https?://[^/]+).*", "$1")
         nextUrl := (SubStr(State.cor5Href, 1, 4) = "http") ? State.cor5Href : baseUrl . State.cor5Href
         SendCommand("navigate_" . nextUrl)
@@ -78,17 +74,15 @@ $AppsKey:: {
 }
 
 ; ── LButton: exit fullscreen when clicking the <video> element ────────────────
-; Only acts when already in fullscreen and browser was playing, and the click
-; itself landed on the page's <video> element (not comments, likes, share
-; buttons, the seek bar, etc). AHK can't inspect the page DOM directly, so
-; content.js reports the click's target through the extension → WebSocket
-; bridge into ahk_video_click.txt.
+; AHK can't inspect the page DOM, so content.js reports the click target via
+; WebSocket into ahk_video_click.txt — that report lands a little after this
+; hotkey fires, hence the deferred check below. File is cleared immediately
+; to drop any stale report from an earlier click.
 ;
-; That report can't be read synchronously here — it has to travel content
-; script → background → WebSocket → file, which lands a little while after
-; this hotkey fires. So the flag file is cleared immediately (wiping out any
-; stale report from an earlier, unrelated click) and re-checked a moment
-; later once the round trip has had time to land.
+; wasPlaying is snapshotted at click time, not re-read inside the deferred
+; check: clicking the video is what pauses it, and on fast players (YouTube
+; Shorts) that pause can land within the 200ms window, so a live re-read
+; would race its own guard and swallow the exit.
 ~LButton:: {
     global State
     try FileDelete(A_Temp . "\ahk_video_click.txt")
@@ -97,12 +91,13 @@ $AppsKey:: {
         return
     if !State.browserIsPlaying
         return
-    SetTimer(_CheckVideoClickExit, -200)
+    wasPlaying := State.browserIsPlaying
+    SetTimer(() => _CheckVideoClickExit(wasPlaying), -200)
 }
 
-_CheckVideoClickExit() {
+_CheckVideoClickExit(wasPlaying) {
     global State
-    if !State.browserInFullScreen || !State.browserIsPlaying
+    if !State.browserInFullScreen || !wasPlaying
         return
     try {
         if Trim(FileRead(A_Temp . "\ahk_video_click.txt")) = "1"
@@ -112,7 +107,7 @@ _CheckVideoClickExit() {
     }
 }
 
-; ── Ctrl+W: send losslessHotkey when in fullscreen, then let browser close the tab ─
+; ── Ctrl+W: exit fullscreen state, then let browser close the tab ────────────
 ~^w:: {
     global State, CONFIG
     if !State.monitorVideo
