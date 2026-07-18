@@ -1,6 +1,6 @@
 ; ============ STATE ENGINE ============
-; Single entry point for all state mutations.
-; Monitors pass their session snapshot here and never act directly.
+; Single entry point for all state mutations — monitors pass their session
+; snapshot here and never act directly.
 
 UpdateState(sessions) {
     global State
@@ -34,12 +34,10 @@ _UpdateProgramState() {
 _OnProgramChanged() {
     global State, CONFIG
 
-    ; Bass: Harman Kardon tracks whether current focused program is a running game.
-    ; Game open + focused → bass on; switched away OR game closed → bass off.
+    ; Harman Kardon: game open + focused → bass on; else off
     if (State.activeSpeaker = "Harman Kardon")
         _UpdateHarmanBass()
 
-    ; Video: re-evaluate hotkeys whenever program focus changes
     _EvalVideoHotkeys()
 }
 
@@ -48,7 +46,6 @@ _UpdateHarmanBass() {
     prog := State.currentProgram
     shouldOn := false
     for game in CONFIG.GAME_LIST {
-        ; Game must be running AND be the focused program
         if ProcessExist(game . ".exe") && InStr(prog, game) {
             shouldOn := true
             break
@@ -78,24 +75,18 @@ _UpdateUrlState() {
         newPlayingTabs := []
         if raw != "" {
             for entry in StrSplit(raw, "`n") {
-                ; Each entry is "tabId|url" — extract just the url part
-                pipePos := InStr(entry, "|")
+                pipePos := InStr(entry, "|")  ; "tabId|url"
                 newPlayingTabs.Push(pipePos ? SubStr(entry, pipePos + 1) : entry)
             }
         }
-        ; Prune seen-tab cache for tabs no longer playable. Two wrinkles vs.
-        ; a plain set-difference:
-        ; 1. Some players (e.g. Bilibili) mutate the URL slightly during
-        ;    playback (tracking/timestamp params), so exact equality could
-        ;    make an already-seen video look new. Use the same lenient
-        ;    substring match as Gate 2 below.
-        ; 2. A single tick where the tab briefly drops out of the reported
-        ;    list (e.g. a DOM blip on pause/resume) shouldn't forget it
-        ;    immediately — require a few consecutive misses first.
-        ;
-        ; Deletions are collected and applied after the loop — mutating
-        ; the Map mid-iteration is unsafe and would abort this try block
-        ; before State.playingTabs is set below.
+        ; Prune seen-tab cache for tabs no longer playable, with two allowances:
+        ; 1. Some players (Bilibili) mutate the URL slightly during playback
+        ;    (tracking/timestamp params) — use the same lenient substring
+        ;    match as Gate 2 below, not exact equality.
+        ; 2. A single tick's DOM blip shouldn't forget a tab immediately —
+        ;    require a few consecutive misses first.
+        ; Deletions collected and applied after the loop since mutating the
+        ; Map mid-iteration is unsafe.
         toForget := []
         for seenUrl in State.startupDelaySeen {
             stillPresent := false
@@ -123,8 +114,8 @@ _UpdateUrlState() {
             State.startupDelayMissCount.Delete(seenUrl)
         }
 
-        ; Synthesize iframe-player sites into playingTabs — content script can't detect
-        ; their video (cross-origin iframe), so we add the current URL if it matches
+        ; synthesize iframe-player sites into playingTabs — content script
+        ; can't detect their video (cross-origin iframe)
         matchedSite := _FindMatchedSite(newUrl)
         if matchedSite && matchedSite.iframePlayer && newUrl != "" {
             alreadyIn := false
@@ -201,40 +192,34 @@ _UpdateMediaState(sessions) {
 
     State.browserPlaybackStatus := newBrowserStatus
 
-    ; Windows' SMTC status for the browser is the browser's own guess about which
-    ; <video> element backs the OS media session — unreliable specifically
-    ; when the tracked element changes (Douyin swapping <video> elements as
-    ; you scroll can leave it stuck reporting "paused" forever). That's why
-    ; State.extPlaying (the extension's own direct DOM observation) exists,
-    ; and why it's OR'd in below: if either source says "playing", trust it.
+    ; Windows' SMTC status for the browser is the browser's own guess about
+    ; which <video> backs the OS media session — unreliable when the tracked
+    ; element changes (e.g. Douyin swapping <video> on scroll can leave it
+    ; stuck reporting "paused"). extPlaying (extension's direct DOM
+    ; observation) exists for this; OR it in if either source says "playing".
     ;
-    ; This applies unconditionally, including while a click-triggered
-    ; pendingExitFS is armed. An earlier version skipped the override in that
-    ; window and used the raw SMTC value instead, reasoning that it reacts
-    ; faster to a genuine pause than extPlaying's extension→WebSocket→file
-    ; round trip. But raw SMTC being unreliable on Douyin is exactly the
-    ; problem extPlaying exists to fix, and trusting it specifically at the
-    ; one moment correctness matters most — deciding whether a click should
-    ; exit fullscreen — meant ANY click anywhere on the page (comments, likes,
-    ; share) could look like "stopped" and trigger an exit, since raw SMTC
-    ; can already be sitting on a stale "paused" reading regardless of what
-    ; was actually clicked. Reliability wins here over shaving off latency.
+    ; Applies unconditionally, including while pendingExitFS is armed. An
+    ; earlier version used raw SMTC in that window instead, reasoning it
+    ; reacts faster to a genuine pause than extPlaying's round trip — but
+    ; that let ANY click anywhere on the page look like "stopped" and trigger
+    ; an exit, since raw SMTC can already be stale regardless of what was
+    ; clicked. Reliability wins over shaving off latency here.
     if State.matchedSite && !State.matchedSite.iframePlayer
         newBrowserIsPlaying := newBrowserIsPlaying || State.extPlaying
 
     if newBrowserIsPlaying {
-        ; Playing — commit immediately, reset debounce counter
+        ; commit immediately, no debounce needed
         State.browserNotPlayingTicks := 0
         if !State.browserIsPlaying {
             State.browserIsPlaying := true
             _EvalVideoHotkeys()
         }
     } else {
-        ; Not playing — only commit after BROWSER_STOP_DEBOUNCE consecutive ticks
+        ; only commit after BROWSER_STOP_DEBOUNCE consecutive ticks
         State.browserNotPlayingTicks += 1
         if State.browserIsPlaying && State.browserNotPlayingTicks >= CONFIG.BROWSER_STOP_DEBOUNCE {
             State.browserIsPlaying := false
-            ; F5 refresh: audio stopped because page is reloading — unblock auto re-entry
+            ; F5 refresh: audio stopped because page is reloading — unblock re-entry
             if State.pendingF5 {
                 State.pendingF5        := false
                 State.manuallyExitedFS := false
@@ -269,9 +254,8 @@ _EvalVideoHotkeys() {
 
     ; Gate 1 — must be song browser on a matched site
     if !inBrowser || !site {
-        ; User has Alt+Tabbed away from browser (or switched to another program).
-        ; Never auto-exit fullscreen here — only user-initiated hotkeys should do that.
-        ; Just disable video hotkeys and leave fullscreen state untouched.
+        ; user Alt+Tabbed away — never auto-exit fullscreen here, only
+        ; user-initiated hotkeys should do that
         if State.browserInFullScreen {
             _SetVideoHotkeys(false)
             return
@@ -297,15 +281,12 @@ _EvalVideoHotkeys() {
     if urlInPlayable {
         State.urlNotPlayableTicks := 0
     } else {
-        ; Debounce — a single tick's DOM blip (e.g. Douyin swapping its <video>
-        ; element mid-feed-rotation during a long idle stretch) shouldn't be
-        ; treated as "left the video" immediately. Sending a real exit-fullscreen
-        ; keystroke on a false alarm can desync AHK's fullscreen state from the
-        ; page's actual state, recoverable only by reloading the page. Require
-        ; a few consecutive misses first, same pattern as browserNotPlayingTicks.
+        ; debounce — a single tick's DOM blip (e.g. Douyin swapping its
+        ; <video> mid-feed) shouldn't read as "left the video"; a false exit
+        ; can desync fullscreen state until the page is reloaded
         State.urlNotPlayableTicks += 1
         if State.urlNotPlayableTicks < CONFIG.URL_MISS_DEBOUNCE
-            return  ; grace period — leave fullscreen/hotkeys state untouched this tick
+            return  ; grace period
     }
 
     if !urlInPlayable {
@@ -379,12 +360,12 @@ _EnterFullscreen() {
     if site.mouseCenter
         MouseMove(4000, A_ScreenHeight/2)
 
-    ; Mark as entering fullscreen BEFORE any sleep — prevents re-entry
-    ; during the startup delay when the polling timer fires mid-sleep
+    ; mark entering fullscreen before any sleep, to prevent re-entry if the
+    ; polling timer fires mid-sleep during the startup delay
     State.browserInFullScreen := true
     State.manuallyExitedFS   := false
     _SetVideoHotkeys(true)
-    UpdateClockVisibility()  ; show now — before the startup-delay Sleep below
+    UpdateClockVisibility()  ; show now, before the startup-delay Sleep below
 
     if site.startupDelay {
         if !_UrlSeenForDelay(State.currentUrl) {

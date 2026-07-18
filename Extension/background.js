@@ -5,28 +5,19 @@ let ws          = null;
 let reconnTimer = null;
 let lastPongAt  = 0;
 
-// tabId → url, for tabs that have a media element (in ANY of their frames —
-// see all_frames note below)
+// tabId → url, for tabs with media in any frame (see all_frames note below)
 const tabMediaMap = new Map();
 
-// The most recently activated (i.e. clicked/focused) tab, tracked directly
-// via chrome.tabs.onActivated/onUpdated rather than queried on demand via
-// {active:true, currentWindow:true} at command time. Queried on demand is
-// what speed_* used to broadcast to every tab with media to work around
-// (see sendCommandToVideoFrame below) — Chrome's "active tab" can be
-// ambiguous while the browser window is in fullscreen (no on-screen tab
-// strip to click, focus can sit oddly), so a live-tracked value here is a
-// more reliable target than trusting a query result at the moment a command
-// arrives.
+// Live-tracked "active tab" via onActivated/onUpdated, not queried on demand —
+// Chrome's active-tab query is ambiguous while the window is fullscreen (no
+// tab strip, focus can sit oddly), so a query at command-time isn't reliable.
 let lastActiveTabId = null;
 
-// tabId → frameId, for the specific frame within a tab that most recently
-// reported owning a <video> element (content.js's "frameHasVideo" message).
-// Needed because content.js now runs in every frame (all_frames: true in
-// manifest.json), not just the top one — some sites (cycani.org) put their
-// real <video> inside a cross-origin player iframe, so a command like
-// seek_0/speed_* has to be targeted at that specific frame, not the tab's
-// top frame, or it'll silently find no <video> and do nothing.
+// tabId → frameId that most recently reported owning a <video>
+// (content.js's "frameHasVideo"). Needed because content.js runs in every
+// frame (all_frames: true) — some sites (cycani.org) put the real <video>
+// in a cross-origin iframe, so seek_0/speed_* must target that frame
+// specifically or it'll silently find nothing.
 const tabVideoFrameMap = new Map();
 
 function connect() {
@@ -37,16 +28,13 @@ function connect() {
 
     ws.onopen = () => {
         console.log("[MediaCtrl] Connected to AHK bridge");
-        // Don't call pushPlayableTabs() here — tabMediaMap is freshly empty
-        // after a service-worker restart. reinjectAllTabs() below confirms
-        // each tab's state with retries and pushes once done, so the list
-        // rebuilds correctly without going through a false-empty state.
+        // Don't push tabMediaMap here — it's freshly empty after a worker
+        // restart. reinjectAllTabs() confirms each tab with retries and
+        // pushes once done.
         //
-        // lastActiveTabId is also freshly null after a service-worker
-        // restart (onActivated won't fire again for a tab the user already
-        // switched to before this worker instance existed) — seed it here
-        // so a speed_* command arriving before the user's next tab switch
-        // still has a real target instead of falling through to a live query.
+        // lastActiveTabId is also freshly null after a restart (onActivated
+        // won't refire for a tab switched to earlier) — seed it here so a
+        // speed_* command has a real target before the next tab switch.
         chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab) lastActiveTabId = tab.id;
         });
@@ -65,18 +53,10 @@ function connect() {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (tab) chrome.tabs.update(tab.id, { url: data.navigate });
             } else if (data.command) {
-                // Previously, speed_* was broadcast to every tab in
-                // tabMediaMap to work around {active:true} being unreliable
-                // while the browser is in fullscreen — but that meant
-                // pressing 1/2/3/4 changed playback speed on every open
-                // tab with media, not just the one being watched (e.g.
-                // YouTube in the background would speed up right along with
-                // the cycani.org tab actually in fullscreen). Route to a
-                // single target tab instead: lastActiveTabId, tracked live
-                // via onActivated/onUpdated below, which doesn't depend on
-                // querying "active" at the moment the command arrives and so
-                // isn't subject to whatever fullscreen-focus ambiguity the
-                // broadcast was originally guarding against.
+                // Route to lastActiveTabId rather than broadcasting to every
+                // tab with media — a prior broadcast approach meant 1/2/3/4
+                // changed playback speed on every open tab, not just the one
+                // being watched.
                 const targetTabId = tabMediaMap.has(lastActiveTabId)
                     ? lastActiveTabId
                     : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
@@ -89,13 +69,9 @@ function connect() {
     ws.onerror = () => { ws.close(); };
 }
 
-// Sends a video-targeted command (seek_0, speed_*) to the frame within tabId
-// that last reported owning a <video> (tabVideoFrameMap). If no frame has
-// reported one yet (e.g. a very fresh page where frameHasVideo hasn't fired),
-// falls back to sendMessage with no frameId, which fans the command out to
-// every frame in the tab — harmless, since content.js's handlers for these
-// commands call getActiveVideo(), which simply no-ops in any frame that
-// doesn't have a <video>.
+// Sends seek_0/speed_* to the frame that last reported owning a <video>.
+// Falls back to fanning out to every frame if none has reported yet —
+// harmless, since content.js's handlers no-op in frames with no <video>.
 async function sendCommandToVideoFrame(tabId, command) {
     const frameId = tabVideoFrameMap.get(tabId);
     try {
@@ -133,12 +109,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ videoClick: true }));
     } else if (msg.type === "frameHasVideo") {
-        // Record/clear which frame in this tab currently owns a <video>, so
-        // seek_0/speed_* commands can be routed straight to it. Only ever
-        // clear the mapping if the frame that's clearing it is the one
-        // currently recorded — otherwise an unrelated frame's "false" report
-        // (e.g. a stale iframe navigating away) could wipe out a different,
-        // still-valid frame's entry.
+        // Only clear the mapping if the clearing frame is the one currently
+        // recorded, so a stale/navigating-away frame can't wipe out a
+        // different still-valid frame's entry.
         if (msg.hasVideo) {
             tabVideoFrameMap.set(tabId, frameId);
         } else if (tabVideoFrameMap.get(tabId) === frameId) {
@@ -159,15 +132,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-    // Don't eagerly remove from tabMediaMap on URL change — the content script
-    // will report mediaPresence:false on the new page if there's no media.
-    // Removing here causes a gap where the tab briefly disappears from playableTabs
-    // during SPA navigations (e.g. YouTube) before the new page reports in.
+    // Don't eagerly remove from tabMediaMap on URL change — content.js will
+    // report mediaPresence:false itself if there's no media on the new page.
+    // Removing here would blank the tab out of playableTabs during SPA
+    // navigations before the new page reports in.
     if (change.url || change.status === "complete")
         pushCurrentTab();
-    // A real navigation invalidates any previously recorded video frame for
-    // this tab — the new page (and its frames) will re-report via
-    // frameHasVideo once loaded, so stale routing doesn't linger.
+    // real navigation invalidates any previously recorded video frame
     if (change.url)
         tabVideoFrameMap.delete(tabId);
 });
@@ -199,16 +170,14 @@ function pushPlayableTabs() {
 }
 
 // ── Startup injection ─────────────────────────────────────────────────────────
-// Re-inject content.js into all existing http tabs when the bridge connects.
-// This recovers playable tab state after an AHK reload without needing manual refreshes.
+// Re-inject content.js into all http tabs on bridge connect, recovering
+// playable-tab state after an AHK reload without manual refreshes.
 
 async function reinjectAllTabs() {
     const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
     console.log(`[MediaCtrl] reinjectAllTabs: found ${tabs.length} http(s) tabs`, tabs.map(t => t.id + ":" + t.url));
-    // Settle all tabs concurrently, then push once with the complete result.
-    // content.js's own spontaneous mediaPresence message still arrives and
-    // pushes too — this is just a verified backstop in case that fire-and-
-    // forget message gets lost.
+    // settle concurrently, then push once with the complete result — content.js's
+    // own spontaneous mediaPresence message still arrives too; this is a backstop
     await Promise.allSettled(tabs.map((tab) => reportTabState(tab.id, tab.url)));
     console.log(`[MediaCtrl] reinjectAllTabs: done, tabMediaMap now has ${tabMediaMap.size} entr${tabMediaMap.size === 1 ? "y" : "ies"}`, Array.from(tabMediaMap.entries()));
     pushPlayableTabs();
@@ -216,60 +185,50 @@ async function reinjectAllTabs() {
 
 async function reportTabState(tabId, url, attempt = 1) {
     try {
-        // allFrames: true — matches manifest.json's all_frames:true for the
-        // static injection. Some sites (cycani.org) put their real <video>
-        // inside a cross-origin player iframe, invisible to a top-frame-only
-        // injection; re-injecting into every frame here keeps this recovery
-        // path (used after an AHK/bridge reload) consistent with normal
-        // page-load injection, instead of silently losing video-frame
-        // detection specifically on reconnect.
+        // allFrames: true, matching manifest.json — some sites (cycani.org)
+        // put the real <video> in a cross-origin iframe invisible to a
+        // top-frame-only injection.
         await chrome.scripting.executeScript({
             target: { tabId, allFrames: true },
             files: ["content.js"],
         });
     } catch (e) {
-        // Tab may not be injectable (e.g. chrome:// pages, PDFs) — skip silently
+        // not injectable (chrome://, PDFs, etc.) — skip silently
         console.log(`[MediaCtrl] tab ${tabId} (${url}): executeScript failed — ${e.message}`);
         return;
     }
 
     try {
-        // frameId: 0 is always the top frame. hasMedia/cor5Href are top-frame-
-        // only concerns (see content.js's "Frame awareness" notes) — without
-        // pinning this to frameId 0, sendMessage would fan out to every frame
-        // in the tab (including the video iframe on sites like cycani.org)
-        // and, per Chrome's own docs, resolve to whichever frame answers
-        // first, which could just as easily be a subframe's hasMedia:false.
-        // A subframe with the real <video> reports itself separately and
-        // asynchronously via its own "frameHasVideo" push once its copy of
-        // content.js runs, so it doesn't need to be polled here.
+        // frameId 0 = top frame. hasMedia/cor5Href are top-frame-only
+        // concerns; without pinning to frameId 0, sendMessage would resolve
+        // to whichever frame answers first, possibly a subframe reporting
+        // hasMedia:false. A subframe with the real <video> reports itself
+        // separately via its own "frameHasVideo" push.
         const response = await chrome.tabs.sendMessage(tabId, { command: "reportState" }, { frameId: 0 });
         console.log(`[MediaCtrl] tab ${tabId} (${url}): reportState ->`, response);
         if (response?.hasMedia) tabMediaMap.set(tabId, url);
         else tabMediaMap.delete(tabId);
     } catch (e) {
-        // The script injected fine but didn't answer in time — happens on
-        // backgrounded/throttled or just-discarded tabs racing the reconnect.
-        // Retry a few times with a short delay rather than silently dropping
-        // this tab out of playableTabs until the user manually reloads it.
+        // script injected fine but didn't answer in time — backgrounded/
+        // throttled/just-discarded tabs racing the reconnect. Retry rather
+        // than silently dropping the tab from playableTabs.
         console.log(`[MediaCtrl] tab ${tabId} (${url}): sendMessage failed on attempt ${attempt} — ${e.message}`);
         if (attempt < 3) {
             await new Promise((resolve) => setTimeout(resolve, 300));
             return reportTabState(tabId, url, attempt + 1);
         }
         console.warn(`[MediaCtrl] tab ${tabId} (${url}): gave up after ${attempt} attempts`);
-        // Gave up — leave tabMediaMap's existing entry (if any) untouched
-        // rather than guessing either way.
+        // leave any existing tabMediaMap entry untouched rather than guessing
     }
 }
 
 // ── Service worker keepalive / watchdog ───────────────────────────────────────
-// Chrome kills this service worker after ~30s of inactivity, and an idle
-// WebSocket doesn't count as activity — so the worker (and its reconnect
-// timer) can die mid-session with no chance to recover on its own.
+// Chrome kills this worker after ~30s idle, and an idle WebSocket doesn't
+// count as activity — so the worker (and its reconnect timer) can die
+// mid-session with no chance to recover on its own.
 //
-// chrome.alarms survives worker termination and wakes it on schedule,
-// regardless of what else happened. 30s is the minimum period Chrome allows.
+// chrome.alarms survives worker termination and wakes it on schedule. 30s is
+// the minimum period Chrome allows.
 const HEARTBEAT_ALARM = "mediactrl-heartbeat";
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
 
@@ -277,16 +236,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== HEARTBEAT_ALARM) return;
 
     if (!ws || ws.readyState === WebSocket.CLOSED) {
-        // Connection is down (or this is a fresh worker instance) — reconnect.
-        // connect()'s ws.onopen will reinject content scripts into every tab,
-        // which repairs any tab whose media state was lost when the previous
-        // worker instance (and its tabMediaMap) was terminated.
+        // down (or fresh worker) — reconnect. onopen reinjects content
+        // scripts into every tab, repairing state lost with the prior worker.
         connect();
     } else if (ws.readyState === WebSocket.OPEN) {
-        // readyState alone isn't trustworthy — a bridge-side hang or a
-        // half-torn-down loopback socket can leave it stuck at OPEN with
-        // no close/error event ever firing. Require a pong within 2 missed
-        // intervals (90s) before trusting it, otherwise force a reconnect.
+        // readyState alone isn't trustworthy — a bridge-side hang or
+        // half-torn-down loopback socket can stay stuck at OPEN with no
+        // close/error ever firing. Require a pong within 2 missed intervals
+        // (90s) before trusting it.
         if (Date.now() - lastPongAt > 90000) {
             console.warn("[MediaCtrl] No pong in 90s — connection looks dead, forcing reconnect");
             try { ws.close(); } catch (e) {}

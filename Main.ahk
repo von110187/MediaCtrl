@@ -65,10 +65,7 @@ MonitorTick() {
     try {
         sessions := Media.GetSessions()
     } catch as err {
-        ; Media.GetSessions() is a COM/WinRT call, unrelated to the
-        ; bridge-derived URL/tab state. A failure here used to `return`
-        ; early and freeze tab/URL tracking along with it. Log and fall
-        ; back to the last known session list so tracking keeps moving.
+        ; keep last known sessions so URL/tab tracking doesn't freeze on a COM hiccup
         try FileAppend(A_Now . " GetSessions failed: " . err.Message . "`n", A_Temp . "\ahk_getsessions_errors.log")
         sessions := State.sessions
     }
