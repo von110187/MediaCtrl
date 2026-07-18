@@ -363,8 +363,8 @@ _SongTogglePlayPause() {
             return
         }
     }
-    ; no session yet — song app open but hasn't played anything
-    _ActivateSongApp("{Space}")
+    ; no session yet — song app open (or not running) but hasn't played anything
+    _ActivateSongApp("{Space}", "", 2500, (session) => session.TogglePlayPause())
 }
 
 _SongSkipNext() {
@@ -376,7 +376,7 @@ _SongSkipNext() {
         }
     }
     ; No session — activate song app and send Ctrl+Right
-    _ActivateSongApp("^{Right}")
+    _ActivateSongApp("^{Right}", "", 2500, (session) => session.SkipNext())
 }
 
 _SongSkipPrevious() {
@@ -390,26 +390,113 @@ _SongSkipPrevious() {
             return
         }
     }
-    ; No session — activate song app and send Ctrl+Left then Space
-    _ActivateSongApp("^{Left}", "{Space}")
+    ; No session — activate song app and skip-previous (+ resume if paused) once it's ready
+    _ActivateSongApp("^{Left}", "{Space}", 2500, _SongSkipPreviousAction)
 }
 
-; Activates the native Spotify app window, sends a key (and optional second
-; key after a delay), then restores focus. Matched by CONFIG.SONG_EXE.
-_ActivateSongApp(key, key2 := "", delay := 2500) {
+_SongSkipPreviousAction(session) {
+    session.SkipPrevious()
+    if session.PlaybackStatus != 4
+        session.Play()
+}
+
+; Activates the native Spotify app, then performs the requested action.
+; Matched by CONFIG.SONG_EXE.
+;
+; If Spotify isn't running at all, launches it first and polls for an SMTC
+; session to appear (i.e. Spotify has actually finished loading and is
+; ready) rather than guessing with a fixed sleep. If a session shows up in
+; time, sessionAction is called directly on it (reliable — same path as the
+; normal case above). If no session ever appears (e.g. a completely empty
+; library/queue with nothing to report yet), falls back to focusing the
+; window and sending a synthetic key/key2 as a best-effort.
+_ActivateSongApp(key, key2 := "", delay := 2500, sessionAction := "") {
     global CONFIG
     winTitle := "ahk_exe " . CONFIG.SONG_EXE
-    if WinExist(winTitle) {
-        prevWin := WinExist("A")
-        WinActivate(winTitle)
-        WinWaitActive(winTitle, , 1)
-        Send(key)
-        if key2 != "" {
-            Sleep(delay)
-            Send(key2)
+    wasRunning := WinExist(winTitle)
+
+    if !wasRunning {
+        if !_LaunchSongApp()
+            return
+        if !WinWait(winTitle, , 15)
+            return
+
+        session := _WaitForSongSession(20000)
+        if session && sessionAction {
+            try {
+                sessionAction(session)
+                return
+            } catch {
+                ; fall through to keystroke path below
+            }
         }
-        Sleep(100)
-        if prevWin
-            WinActivate("ahk_id " . prevWin)
     }
+
+    prevWin := WinExist("A")
+    WinActivate(winTitle)
+    WinWaitActive(winTitle, , 1)
+    Send(key)
+    if key2 != "" {
+        Sleep(delay)
+        Send(key2)
+    }
+    Sleep(100)
+    if prevWin
+        WinActivate("ahk_id " . prevWin)
+}
+
+; Polls Media.GetSessions() until a session matching CONFIG.SONG appears
+; (Spotify has loaded and registered SMTC — the same readiness signal the
+; rest of the script relies on) or timeoutMs elapses. Refreshes State.sessions
+; on success so the caller's next tick already sees it. Returns the matching
+; session object, or "" if none appeared in time.
+_WaitForSongSession(timeoutMs) {
+    global State, CONFIG
+    pollInterval := 300
+    elapsed := 0
+    while elapsed < timeoutMs {
+        try {
+            sessions := Media.GetSessions()
+            for session in sessions {
+                if InStr(session.SourceAppUserModelId, CONFIG.SONG) {
+                    State.sessions := sessions
+                    return session
+                }
+            }
+        } catch {
+        }
+        Sleep(pollInterval)
+        elapsed += pollInterval
+    }
+    return ""
+}
+
+; Launches Spotify via the Windows "App Paths" registry entry (how Explorer/
+; Run resolves a bare CONFIG.SONG_EXE without needing a hardcoded install
+; path — checks HKCU first since Spotify's per-user installer registers
+; there, then HKLM for machine-wide/Store installs). Falls back to Run()'ing
+; the bare name in case it's on PATH. Returns true if a launch was
+; attempted, false if no path could be resolved.
+_LaunchSongApp() {
+    global CONFIG
+    appPathsKeys := [
+        "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" . CONFIG.SONG_EXE,
+        "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" . CONFIG.SONG_EXE
+    ]
+    for regKey in appPathsKeys {
+        try {
+            exePath := RegRead(regKey, , "")
+            if exePath != "" && FileExist(exePath) {
+                Run('"' . exePath . '"')
+                return true
+            }
+        } catch {
+        }
+    }
+    try {
+        Run(CONFIG.SONG_EXE)
+        return true
+    } catch {
+    }
+    return false
 }
