@@ -1,85 +1,61 @@
 ; ============ GLOBAL STATE ============
 
 global State := {
-    ; Session cache — populated once per tick, shared across monitors
+    ; session cache — populated once per tick, shared across monitors
     sessions:        [],
     currentInterval: 0,
 
-    ; Active window (process name via WinGetProcessName)
-    currentProgram: "",
+    currentProgram: "",  ; active window process name
+    currentUrl: "",       ; current browser URL, pushed by extension via bridge
+    cor5Href: "",          ; next-episode href from <a class="cor5"> (or "")
+    playingTabs: [],        ; playable tabs reported by extension
+    matchedSite: "",         ; matched site config object (or "")
 
-    ; Current browser URL (pushed by extension via bridge)
-    currentUrl: "",
+    browserIsPlaying:      false,
+    browserPlaybackStatus: 0,      ; last known PlaybackStatus for the browser session
 
-    ; Next-episode href from <a class="cor5"> on the current page (or "")
-    cor5Href: "",
-
-    ; Playable tabs reported by extension (tabs with <video>/<audio>)
-    playingTabs: [],
-
-    ; Matched site config object (or "" if none)
-    matchedSite: "",
-
-    ; browser media state
-    browserIsPlaying:        false,
-    browserPlaybackStatus:   0,     ; last known PlaybackStatus for the browser session
-
-    ; Debounce counter — how many consecutive ticks browser has reported not-playing.
-    ; We only commit the state change after BROWSER_STOP_DEBOUNCE ticks to avoid latency glitches.
+    ; debounce — consecutive not-playing ticks before committing the change (see BROWSER_STOP_DEBOUNCE)
     browserNotPlayingTicks: 0,
     browserInFullScreen: false,
 
-    ; Debounce counter — consecutive ticks Gate 2 (current URL not in playingTabs)
-    ; has failed. See URL_MISS_DEBOUNCE in Config.ahk.
+    ; debounce — consecutive Gate 2 misses (see URL_MISS_DEBOUNCE in Config.ahk)
     urlNotPlayableTicks: 0,
 
-    ; Ground-truth "is the active video actually playing" as observed directly
-    ; by content.js, bypassing the browser/Windows' own (sometimes unreliable, see
-    ; StateEngine.ahk _UpdateMediaState) SMTC media-session relay.
+    ; ground-truth "is the video playing" observed directly by content.js,
+    ; bypassing SMTC (see StateEngine.ahk _UpdateMediaState)
     extPlaying: false,
 
-    ; Volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
+    ; volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
     volumeSmoothedPeak: 0.0,
     volumeMultiplier:   1.0,
-    volumeDebug:        "",  ; last _SetBrowserVolume() diagnostic result, for the F6 tooltip
+    volumeDebug:        "",  ; last _SetBrowserVolume() diagnostic, for the F6 tooltip
 
-    ; Set true by LButton/b while playing — exits fullscreen once audio stops
-    pendingExitFS: false,
-    ; while audio is still playing. Prevents auto re-enter until audio stops.
-    manuallyExitedFS: false,
+    pendingExitFS: false,     ; set by LButton/b while playing — exits once audio stops
+    manuallyExitedFS: false,  ; user exited FS manually — blocks auto re-enter until audio stops
 
-    ; Set true by F5 — blocks re-entry until audio stops (page reloading), then clears
-    pendingF5: false,
+    pendingF5: false,  ; set by F5 — blocks re-entry until page reload finishes, then clears
 
-    ; Video hotkeys gate — b w a s d 1 2 3 4 esc f1 f2 f3 f5
-    videoHotkeys: false,
+    videoHotkeys: false,  ; gate for b w a s d 1 2 3 4 esc f1 f2 f3 f5
 
-    ; monitorVideo toggle — F7 to enhance/pause monitoring
-    monitorVideo: true,
+    monitorVideo: true,  ; F7 toggle
 
-    ; Bilibili first-visit sleep — tracks each playable tab URL seen, to sleep only on first enter
+    ; Bilibili first-visit sleep — tracks each playable tab URL seen
     startupDelaySeen: Map(),
-    ; Consecutive-miss counter per startupDelaySeen entry — see pruning logic in StateEngine.ahk
+    ; consecutive-miss counter per startupDelaySeen entry — see pruning in StateEngine.ahk
     startupDelayMissCount: Map(),
 
-    ; song
     songIsPlaying:        false,
     songSkipLock:         false,
     songSkipCooldownUntil: 0,   ; TickCount — outro skip suppressed until this time
-    songLastUpdatedTime:  0,    ; previous LastUpdatedTime — track change detected when it jumps forward
+    songLastUpdatedTime:  0,    ; previous LastUpdatedTime — track change detected on forward jump
 
-    ; Speaker (set once at startup)
-    activeSpeaker: "",
+    activeSpeaker: "",  ; set once at startup
 
-    ; Bass EQ
     bassOn: false,
 
-    ; Game running state — keyed as State.gameRunning["ZenlessZoneZero"]
-    gameRunning: Map(),
+    gameRunning: Map(),  ; keyed as State.gameRunning["ZenlessZoneZero"]
 
-    ; Tooltip visibility
     showTooltip: false,
 
-    ; Startup tick (for Adam D3V logic)
     startupTime: A_TickCount,
 }

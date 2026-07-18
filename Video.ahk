@@ -21,10 +21,9 @@ _OnPlaybackInfoChanged(session, *) {
             return
         newIsPlaying := session.PlaybackStatus = 4
         if State.browserIsPlaying != newIsPlaying {
-            ; Commit instantly — this is an event-driven update, no debounce needed
+            ; event-driven, no debounce needed
             State.browserIsPlaying       := newIsPlaying
             State.browserNotPlayingTicks := 0
-            ; Fetch fresh sessions so the full UpdateState has current data
             try {
                 freshSessions := Media.GetSessions()
                 State.sessions := freshSessions
@@ -173,14 +172,11 @@ _HK_F5(*) {
     if site.mouseCenter
         MouseMove(A_ScreenWidth/2, A_ScreenHeight/2)
 
-    ; Exit fullscreen and toggle lossless off
     Send(CONFIG.LOSSLESS_HOTKEY)
     Send(site.fsKey)
     State.browserInFullScreen := false
 
-    ; Block auto re-entry while browser is still playing during page reload.
-    ; pendingF5 tells _UpdateMediaState to clear manuallyExitedFS once audio stops,
-    ; allowing the state engine to re-enter fullscreen when playback resumes.
+    ; blocks auto re-entry during reload; _UpdateMediaState clears manuallyExitedFS once audio stops
     State.pendingF5       := true
     State.manuallyExitedFS := true
 

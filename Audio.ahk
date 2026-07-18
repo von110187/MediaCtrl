@@ -1,5 +1,5 @@
 ; ============ MONITOR AUDIO ============
-; Called every tick. Spotify outro logic only — no playback state tracking here.
+; Called every tick — Spotify (native app) outro logic only.
 
 MonitorAudio(sessions) {
     global CONFIG
@@ -13,12 +13,10 @@ MonitorAudio(sessions) {
 ; Skips to next track when status is 4 (playing) but audio peak is 0 —
 ; catches silent Spotify outros that don't change playback status.
 ;
-; Track changes from any source (hotkey, mouse, phone) are detected by
-; LastUpdatedTime jumping forward, which arms a cooldown so the post-skip
-; silence isn't misread as a silent outro.
-;
-; LastUpdatedTime is Windows FILETIME ÷ 10,000,000 (epoch Jan 1 1601).
-; Subtract 11644473600 to convert to Unix epoch.
+; Track changes (hotkey, mouse, phone) are detected by LastUpdatedTime
+; jumping forward, arming a cooldown so post-skip silence isn't misread as
+; a silent outro. LastUpdatedTime is Windows FILETIME ÷ 10,000,000 (epoch
+; Jan 1 1601) — subtract 11644473600 to convert to Unix epoch.
 
 _CheckSongOutro(session) {
     global State
@@ -30,8 +28,6 @@ _CheckSongOutro(session) {
         status      := session.PlaybackStatus
 
         ; ── Track-change detection (universal) ─────────────────────────────
-        ; LastUpdatedTime resets on any new track, regardless of trigger
-        ; (hotkey, mouse, phone). A forward jump means a new track loaded.
         if State.songLastUpdatedTime != 0 && lastUpdated > State.songLastUpdatedTime {
             State.songSkipCooldownUntil := A_TickCount + 2000
             State.songSkipLock          := false
@@ -52,8 +48,6 @@ _CheckSongOutro(session) {
 
         ; ── Silent-outro detection ──────────────────────────────────────────
         ; Spotify stays at status=4 through silent outros — only peak drops to 0.
-        ; Cooldown suppresses this for 2s after a track change; duration check
-        ; only fires in the last 10s of the track.
         peak := _GetSongPeak()
         if peak >= 0 {
             if (peak < 0.001) {
@@ -71,11 +65,9 @@ _CheckSongOutro(session) {
 }
 
 ; ============ WASAPI PEAK METER ============
-; Returns Spotify's current audio peak (0.0–1.0), or -1 on failure.
-; Spotify runs as an Edge PWA with no dedicated exe and no WASAPI display
-; name, so it can't be matched directly — instead this finds all msedge.exe
-; sessions and returns the highest peak among them. Exact if Spotify is the
-; only audio source in Edge; still a valid "is Edge silent?" signal otherwise.
+; Returns Spotify's audio peak (0.0-1.0), or -1 on failure. Spotify runs as
+; the native desktop app, so this matches its own Spotify.exe WASAPI
+; session(s) directly (CONFIG.SONG = "spotify" matches the process name).
 _GetSongPeak() {
     global WASAPI_CLSIDS, CONFIG
 
@@ -135,8 +127,8 @@ _GetSongPeak() {
 
 
 ; ============ WASAPI SESSION DEBUG ============
-; Returns all WASAPI session display names + identifiers as a string.
-; Used by the tooltip to diagnose which session name Spotify registers under.
+; All WASAPI session names + identifiers, for the tooltip to diagnose which
+; session name Spotify registers under.
 
 _GetWasapiSessionsDebug() {
     global WASAPI_CLSIDS
@@ -179,17 +171,14 @@ _GetWasapiSessionsDebug() {
     return result
 }
 ; ============ VOLUME LEVELER ============
-; Reactively attenuates Chrome's per-app volume so videos recorded
-; louder/quieter than each other come out sounding roughly consistent as you
-; scroll through a feed. This is attenuation-only — WASAPI's per-app volume
-; can scale a session's output down from whatever it already is, but it can
-; never boost a quiet video past its own natural peak. In practice that's
-; usually the actually-useful direction (evening out the occasional video
-; that's uncomfortably loud), rather than a true bidirectional loudness match.
+; Reactively attenuates the browser's per-app volume so videos recorded
+; louder/quieter than each other sound roughly consistent when scrolling a
+; feed. Attenuation-only — WASAPI can scale a session down but never boost
+; it past its own peak, so this evens out occasional loud videos rather than
+; matching loudness bidirectionally.
 ;
-; Runs only while actively watching one of our configured sites; resets
-; Chrome back to full volume otherwise so it doesn't stay quiet for
-; unrelated tabs/content once you navigate away.
+; Runs only while actively watching a configured site; resets the browser to
+; full volume otherwise so it doesn't stay quiet after navigating away.
 
 _UpdateVolumeLeveler() {
     global State, CONFIG
@@ -202,30 +191,28 @@ _UpdateVolumeLeveler() {
         if State.volumeMultiplier != 1.0 {
             State.volumeMultiplier   := 1.0
             State.volumeSmoothedPeak := 0.0
-            State.volumeDebug := _SetChromeVolume(1.0)
+            State.volumeDebug := _SetBrowserVolume(1.0)
         }
         return
     }
 
-    peak := _GetChromePeak()
+    peak := _GetBrowserPeak()
     if peak < 0
         return  ; couldn't read a session this tick
 
-    ; 1. Keep the Exponential Moving Average to smooth out quick dialogue gaps
+    ; EMA smooths out quick dialogue gaps
     a := CONFIG.VOLUME_LEVELER_SMOOTHING
     State.volumeSmoothedPeak := (State.volumeSmoothedPeak * (1 - a)) + (peak * a)
 
-    ; 2. Calculate the IDEAL multiplier directly using pre-fader math
     if State.volumeSmoothedPeak < 0.01 {
-        targetMultiplier := 1.0  ; Avoid division by zero during absolute silence
+        targetMultiplier := 1.0  ; avoid division by zero during silence
     } else {
         targetMultiplier := CONFIG.VOLUME_LEVELER_TARGET / State.volumeSmoothedPeak
     }
 
-    ; 3. Clamp the ideal target between your min floor (0.3) and max ceiling (1.0)
     targetMultiplier := Max(CONFIG.VOLUME_LEVELER_MIN, Min(1.0, targetMultiplier))
 
-    ; 4. Use the step limit to smoothly transition toward the target multiplier
+    ; step limit for a smooth transition toward the target
     error := targetMultiplier - State.volumeMultiplier
     if Abs(error) < CONFIG.VOLUME_LEVELER_DEADZONE
         return
@@ -240,14 +227,13 @@ _UpdateVolumeLeveler() {
         return
 
     State.volumeMultiplier := newMultiplier
-    State.volumeDebug := _SetChromeVolume(newMultiplier)
+    State.volumeDebug := _SetBrowserVolume(newMultiplier)
 }
 
-; Returns Chrome's current audio peak (0.0–1.0) — the loudest of all
-; chrome.exe WASAPI sessions, since a tab's audio can live in any of several
-; renderer-process sessions depending on Chrome's site-isolation layout.
-; Returns -1 on failure or if no Chrome session currently exists.
-_GetChromePeak() {
+; Returns the browser's current audio peak (0.0-1.0), the loudest of all
+; CONFIG.BROWSER WASAPI sessions (a tab's audio can live in any renderer-
+; process session under Chromium's site-isolation). -1 on failure/no session.
+_GetBrowserPeak() {
     global WASAPI_CLSIDS, CONFIG
 
     try {
@@ -304,18 +290,14 @@ _GetChromePeak() {
     return -1
 }
 
-; Sets the WASAPI per-app volume multiplier (0.0–1.0) on every chrome.exe
-; audio session. Attenuation only — scales down from whatever Chrome/the
-; page's own volume already is; can never boost past that.
-;
-; Returns a diagnostic object {total, chromeSessions, volumeSet, error} so
-; the tooltip can show exactly how many sessions were enumerated, how many
-; matched chrome.exe, and how many actually accepted the volume call — since
-; peak-reading and volume-setting query different interfaces off the same
-; session pointer, one can silently fail while the other keeps working.
-_SetChromeVolume(multiplier) {
+; Sets the WASAPI per-app volume multiplier (0.0-1.0) on every CONFIG.BROWSER
+; session. Attenuation only. Returns a diagnostic {total, browserSessions,
+; volumeSet, error} for the tooltip — peak-reading and volume-setting query
+; different interfaces off the same session pointer, so one can silently
+; fail while the other works.
+_SetBrowserVolume(multiplier) {
     global WASAPI_CLSIDS, CONFIG
-    result := {total: 0, chromeSessions: 0, volumeSet: 0, error: ""}
+    result := {total: 0, browserSessions: 0, volumeSet: 0, error: ""}
 
     try {
         enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
@@ -348,7 +330,7 @@ _SetChromeVolume(multiplier) {
                 if !InStr(procName, CONFIG.BROWSER)
                     continue
 
-                result.chromeSessions += 1
+                result.browserSessions += 1
 
                 simpleVolume := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.ISimpleAudioVolume)
                 if !simpleVolume
@@ -381,8 +363,8 @@ _SongTogglePlayPause() {
             return
         }
     }
-    ; No session yet — song PWA is open but hasn't played anything (no SMTC session exists).
-    _ActivateSongPWA("{Space}")
+    ; no session yet — song app open but hasn't played anything
+    _ActivateSongApp("{Space}")
 }
 
 _SongSkipNext() {
@@ -393,8 +375,8 @@ _SongSkipNext() {
             return
         }
     }
-    ; No session — activate song PWA and send Ctrl+Right
-    _ActivateSongPWA("^{Right}")
+    ; No session — activate song app and send Ctrl+Right
+    _ActivateSongApp("^{Right}")
 }
 
 _SongSkipPrevious() {
@@ -408,16 +390,15 @@ _SongSkipPrevious() {
             return
         }
     }
-    ; No session — activate song PWA and send Ctrl+Left then Space
-    _ActivateSongPWA("^{Left}", "{Space}")
+    ; No session — activate song app and send Ctrl+Left then Space
+    _ActivateSongApp("^{Left}", "{Space}")
 }
 
-; Activates the song web app/PWA window, sends a key (and optional second key
-; after a delay), then restores focus. Window title/class come from
-; CONFIG.SONG_PWA_TITLE / CONFIG.BROWSER_WINDOW_CLASS.
-_ActivateSongPWA(key, key2 := "", delay := 2500) {
+; Activates the native Spotify app window, sends a key (and optional second
+; key after a delay), then restores focus. Matched by CONFIG.SONG_EXE.
+_ActivateSongApp(key, key2 := "", delay := 2500) {
     global CONFIG
-    winTitle := CONFIG.SONG_PWA_TITLE . " ahk_class " . CONFIG.BROWSER_WINDOW_CLASS
+    winTitle := "ahk_exe " . CONFIG.SONG_EXE
     if WinExist(winTitle) {
         prevWin := WinExist("A")
         WinActivate(winTitle)

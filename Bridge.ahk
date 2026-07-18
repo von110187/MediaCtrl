@@ -1,11 +1,8 @@
 ; ============ BRIDGE SERVER ============
-; Runs a local Node.js server:
-;   WS  port 9224 — browser extension pushes URL + playable tabs
-;   HTTP port 9223 — AHK sends commands to extension (speed, cor5, etc.)
-;
-; mediactrl_bridge.js and node_modules live next to the script (A_ScriptDir)
-; so they survive OS temp-folder cleanup between runs.
-; Runtime IPC files (url, tabs, cor5) stay in A_Temp — they are throwaway.
+; Local Node.js server: WS port 9224 (extension pushes URL/tabs), HTTP port
+; 9223 (AHK sends commands to extension). Script + node_modules live next to
+; the script (A_ScriptDir) so they survive temp-folder cleanup; runtime IPC
+; files stay in A_Temp and are throwaway.
 
 KillPort(port) {
     batFile := A_Temp . "\kill_port_" . port . ".bat"
@@ -49,22 +46,18 @@ let currentUrl  = "";
 let playingTabs = [];
 let wsClient    = null;
 
-// Append-only on purpose: if a stale old process is still alive alongside
-// a fresh one, both log to this file with their own PIDs, making the
-// overlap visible instead of guessed at.
+// append-only so overlapping stale/fresh process logs stay distinguishable by PID
 function dlog(msg) {
     try {
         fs.appendFileSync(DEBUG_LOG_FILE, "[" + new Date().toISOString() + "] [pid " + process.pid + "] " + msg + "\n");
     } catch (e) {}
 }
 
-// Overwritten every startup — the PID in this file is the most recently
-// started bridge. If Task Manager shows another node.exe with a different
-// PID, that's a stale process still serving old code on the same port.
+// most-recently-started PID — a different node.exe in Task Manager is a stale process on the same port
 try { fs.writeFileSync(PID_FILE, "pid=" + process.pid + " version=" + BRIDGE_VERSION + " startedAt=" + new Date().toISOString()); } catch (e) {}
 dlog("=== bridge starting, version=" + BRIDGE_VERSION + " ===");
 
-// HTTP server — AHK sends commands via /setcommand/<cmd>
+// AHK sends commands via /setcommand/<cmd>
 const server = http.createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -86,14 +79,12 @@ const server = http.createServer((req, res) => {
     }
 });
 
-// WebSocket server — browser extension connects here
+// browser extension connects here
 const wss = new WebSocketServer({ port: 9224, host: "127.0.0.1" });
 
 wss.on("connection", (ws) => {
     dlog("client connected");
-    // Kill any prior connection outright so it can't linger as a zombie
-    // that looks connected but never delivers data again (e.g. the
-    // extension's old service-worker never closed its socket cleanly).
+    // kill stale prior connection so it can't linger as a zombie (e.g. extension's old service-worker socket)
     if (wsClient && wsClient !== ws) {
         dlog("closing stale prior connection");
         try { wsClient.terminate(); } catch (e) {}
@@ -102,10 +93,7 @@ wss.on("connection", (ws) => {
     ws.on("message", (msg) => {
         try {
             const data = JSON.parse(msg);
-            // Synchronous writes are deliberate: async fs.writeFile gives no
-            // ordering guarantee between overlapping writes, so two pushes
-            // landing close together could let a stale write clobber a newer
-            // one. Payloads are tiny, so blocking briefly is cheap.
+            // sync writes: avoids ordering issues between overlapping async writes; payloads are tiny
             if (data.url !== undefined) {
                 currentUrl = data.url;
                 try { fs.writeFileSync(URL_FILE, currentUrl); } catch (e) {}

@@ -1,21 +1,14 @@
 ; ============ FULLSCREEN CLOCK OVERLAY ============
-; A small always-on-top, click-through clock at the top-right of the screen,
-; shown only while in fullscreen video — fullscreen hides Windows' taskbar
-; clock, so this fills the gap.
+; Small always-on-top, click-through clock, shown only in fullscreen video
+; (fullscreen hides Windows' taskbar clock).
 ;
-; +E0x20 = WS_EX_TRANSPARENT: clicks pass straight through to the browser
-; underneath, so this never interferes with the LButton fullscreen-exit logic
-; or anything else. +ToolWindow keeps it out of the taskbar/Alt+Tab.
+; +E0x20 = WS_EX_TRANSPARENT so clicks pass through to the browser and never
+; interfere with LButton fullscreen-exit. Gui's BackColor is a magenta
+; color-key that WinSetTransColor makes fully transparent, so only the text
+; floats over the video.
 ;
-; No background box: the Gui's BackColor is a color-keyed "magic" color
-; (magenta — unlikely to appear in real video content) that WinSetTransColor
-; makes fully transparent, so only the white text itself is visible, floating
-; over the video.
-;
-; Tweak these if you want a different size/position — CLOCK_MARGIN_RIGHT is
-; the gap between the box's right edge and the screen's right edge; increase
-; it to move the clock further left (e.g. to clear Douyin's own like/comment/
-; share icon column that runs down the right edge in fullscreen).
+; CLOCK_MARGIN_RIGHT: increase to move the clock further left (e.g. to clear
+; Douyin's like/comment/share icon column on the right edge in fullscreen).
 CLOCK_W               := 120
 CLOCK_H               := 40
 CLOCK_MARGIN_RIGHT     := 65
@@ -39,29 +32,17 @@ InitClockOverlay() {
     ClockTextCtrl := ClockGui.AddText("Center w" . CLOCK_W . " h" . CLOCK_H, FormatTime(, "h:mm"))
 
     x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
-    ; Show once (creates the real window so WinSetTransColor has something to
-    ; target), then explicitly Hide it. Passing "Hide" inline together with
-    ; x/y/w/h in the same Show() call doesn't reliably keep a brand-new Gui
-    ; hidden on its very first show — so the clock was appearing immediately
-    ; at script start. Since the tracked _clockShown var still started as
-    ; false, the update loop never noticed the mismatch (and never updates the
-    ; text while it thinks the clock is hidden), until a real fullscreen entry
-    ; finally resynced it — matching "shows immediately, doesn't update, until
-    ; I play a video."
+    ; Show once so WinSetTransColor has a real window to target, then hide —
+    ; passing "Hide" inline with x/y/w/h doesn't reliably keep a new Gui
+    ; hidden on its first show.
     ClockGui.Show("NoActivate x" . x . " y" . CLOCK_MARGIN_TOP . " w" . CLOCK_W . " h" . CLOCK_H)
     WinSetTransColor(CLOCK_TRANSPARENT_KEY, "ahk_id " . ClockGui.Hwnd)
     ClockGui.Hide()
 }
 
-; UpdateClockVisibility() is called directly from StateEngine.ahk's
-; _EnterFullscreen/_ExitFullscreenByUser/_ExitFullscreen the instant
-; browserInFullScreen actually changes, so show/hide has zero delay. The
-; SetTimer-driven UpdateClockOverlay() below still exists as a once-a-second
-; safety net (refreshes the displayed text, and re-checks visibility in case
-; some path ever changes browserInFullScreen without going through those
-; three functions) — but it's no longer the primary trigger, so the up-to-1s
-; lag that used to show up between actual fullscreen changes and the clock
-; reacting is gone.
+; Called directly from StateEngine.ahk's _EnterFullscreen/_ExitFullscreenByUser/
+; _ExitFullscreen for zero-delay show/hide. The SetTimer-driven
+; UpdateClockOverlay() below is a once-a-second safety net, not the primary trigger.
 UpdateClockVisibility() {
     global ClockGui, ClockTextCtrl, State, _clockShown
     global CLOCK_W, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP
@@ -121,16 +102,14 @@ ShowTooltip() {
     t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
     levelerActive := State.matchedSite && State.browserIsPlaying
     t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
-    livePeak := _GetChromePeak()
+    livePeak := _GetBrowserPeak()
     t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
     t .= "Smoothed:   " . Round(State.volumeSmoothedPeak, 4) . " (target " . CONFIG.VOLUME_LEVELER_TARGET . ")`n"
     t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
-    ; Force a fresh diagnostic call every refresh (re-applies the current
-    ; multiplier — harmless) rather than showing whatever State.volumeDebug
-    ; happened to be left at, since the leveler only actually calls
-    ; _SetChromeVolume when the multiplier changes by a meaningful amount.
-    dbg := _SetChromeVolume(State.volumeMultiplier)
-    t .= "Sessions:   " . dbg.total . " total, " . dbg.chromeSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
+    ; fresh diagnostic every refresh (re-applies current multiplier, harmless)
+    ; rather than showing stale volumeDebug
+    dbg := _SetBrowserVolume(State.volumeMultiplier)
+    t .= "Sessions:   " . dbg.total . " total, " . dbg.browserSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
     if dbg.error != ""
         t .= "Error:      " . dbg.error . "`n"
     t .= "`n"

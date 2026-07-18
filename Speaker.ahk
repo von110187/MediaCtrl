@@ -25,7 +25,7 @@ InitSpeaker() {
         }
         _SetBass(false)
     } else if InStr(speakerName, "Adam D3V") {
-        ; Nothing for first 30 min — timer set in Main.ahk after InitSpeaker()
+        ; timer set in Main.ahk after InitSpeaker()
     }
 }
 
