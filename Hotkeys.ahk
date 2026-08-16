@@ -70,7 +70,7 @@ $Insert::           _SongSkipNext()
 $AppsKey:: {
     if ProcessExist("ZenlessZoneZero.exe")
         return
-    Run('"D:\Program Files\Epic Games\ZenlessZoneZero\games\ZenlessZoneZero Game\ZenlessZoneZero.exe"')
+    Run('"C:\Program Files\Epic Games\ZenlessZoneZero\games\ZenlessZoneZero Game\ZenlessZoneZero.exe"')
 }
 
 ; ── LButton: exit fullscreen when clicking the <video> element ────────────────

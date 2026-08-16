@@ -76,7 +76,7 @@ MonitorLMStudio() {
         return
     }
     if !ProcessExist("LosslessScaling.exe") {
-        Run('"D:\Program Files (x86)\Steam\steamapps\common\Lossless Scaling\LosslessScaling.exe"')
+        Run('"C:\Program Files (x86)\Steam\steamapps\common\Lossless Scaling\LosslessScaling.exe"')
         WinWait("ahk_exe LosslessScaling.exe")
         WinClose("ahk_exe LosslessScaling.exe")
     }
@@ -101,6 +101,9 @@ InitVideoHotkeys() {
     Hotkey("$2", _HK_2, "Off")
     Hotkey("$3", _HK_3, "Off")
     Hotkey("$4", _HK_4, "Off")
+
+    ; e — skip forward 87 seconds (relative, not an absolute-time jump)
+    Hotkey("$e", _HK_e, "Off")
 
     ; Esc — toggle fullscreen
     Hotkey("$Esc", _HK_Esc, "Off")
@@ -145,6 +148,7 @@ _HK_d(*) {
 }
 
 _HK_0(*) => SendCommand("seek_0")
+_HK_e(*) => SendCommand("seek_fwd_87")
 _HK_1(*) => SendCommand("speed_1.0")
 _HK_2(*) => SendCommand("speed_1.5")
 _HK_3(*) => SendCommand("speed_2.0")
