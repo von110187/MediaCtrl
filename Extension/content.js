@@ -236,6 +236,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const video = getActiveVideo();
         if (video) video.currentTime = 0;
 
+    } else if (cmd?.startsWith("seek_fwd_")) {
+        const seconds = parseFloat(cmd.replace("seek_fwd_", ""));
+        if (!isNaN(seconds)) {
+            const video = getActiveVideo();
+            if (video) {
+                const max = isFinite(video.duration) ? video.duration : Infinity;
+                video.currentTime = Math.min(video.currentTime + seconds, max);
+            }
+        }
+
+    } else if (cmd?.startsWith("seek_back_")) {
+        const seconds = parseFloat(cmd.replace("seek_back_", ""));
+        if (!isNaN(seconds)) {
+            const video = getActiveVideo();
+            if (video) {
+                video.currentTime = Math.max(video.currentTime - seconds, 0);
+            }
+        }
+
     } else if (cmd?.startsWith("speed_")) {
         const speed = parseFloat(cmd.replace("speed_", ""));
         if (!isNaN(speed)) {
