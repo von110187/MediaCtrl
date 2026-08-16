@@ -105,6 +105,9 @@ InitVideoHotkeys() {
     ; e — skip forward 87 seconds (relative, not an absolute-time jump)
     Hotkey("$e", _HK_e, "Off")
 
+    ; q — skip backward 87 seconds (relative, not an absolute-time jump)
+    Hotkey("$q", _HK_q, "Off")
+
     ; Esc — toggle fullscreen
     Hotkey("$Esc", _HK_Esc, "Off")
 
@@ -149,6 +152,7 @@ _HK_d(*) {
 
 _HK_0(*) => SendCommand("seek_0")
 _HK_e(*) => SendCommand("seek_fwd_87")
+_HK_q(*) => SendCommand("seek_back_87")
 _HK_1(*) => SendCommand("speed_1.0")
 _HK_2(*) => SendCommand("speed_1.5")
 _HK_3(*) => SendCommand("speed_2.0")
