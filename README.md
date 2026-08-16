@@ -90,7 +90,7 @@ All user-specific values live in `Config.ahk`:
 
 This repo reflects one specific desk setup, and several pieces are hardcoded rather than configurable:
 
-- Absolute install paths (`D:\Program Files\...`) for Equalizer APO/Peace, Lossless Scaling, and a specific game.
+- Absolute install paths (`C:\Program Files\...`) for Equalizer APO/Peace, Lossless Scaling, and a specific game.
 - Speaker logic keyed to specific hardware names (`Harman Kardon`, `Adam D3V`), including a **shutdown-on-disconnect** behavior for the latter.
 - A media key (`Media_Prev`) is remapped to force a shutdown.
 - One video site (`cycani.org`) is a niche anime streaming site set up with iframe-player handling.

@@ -498,5 +498,13 @@ _LaunchSongApp() {
         return true
     } catch {
     }
+    ; last-resort explicit path, e.g. portable install with no registry entry
+    try {
+        if CONFIG.HasOwnProp("SONG_EXE_PATH") && FileExist(CONFIG.SONG_EXE_PATH) {
+            Run('"' . CONFIG.SONG_EXE_PATH . '"')
+            return true
+        }
+    } catch {
+    }
     return false
 }

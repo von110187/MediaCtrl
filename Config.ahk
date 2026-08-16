@@ -15,6 +15,11 @@ global CONFIG := {
     ; when no SMTC session exists yet
     SONG_EXE: "Spotify.exe",
 
+    ; explicit fallback path used only if the "App Paths" registry lookup
+    ; (see _LaunchSongApp in Audio.ahk) and bare-name Run() both fail —
+    ; e.g. a portable/manual install with no registry entry.
+    SONG_EXE_PATH: "C:\Users\87\AppData\Roaming\Spotify\Spotify.exe",
+
     ; consecutive not-playing ticks before treating the song browser as stopped
     BROWSER_STOP_DEBOUNCE: 1,
 
