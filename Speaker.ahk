@@ -19,7 +19,7 @@ InitSpeaker() {
         ; Default bass OFF
         ; Peace EQ should be running already — launch if not
         if !ProcessExist("Peace.exe") {
- ,           Run('"C:\Program Files\EqualizerAPO\config\Peace.exe"')
+            Run('"C:\Program Files\EqualizerAPO\config\Peace.exe"')
             ProcessWait("Peace.exe")
             Sleep(3000)
         }
