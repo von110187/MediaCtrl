@@ -38,7 +38,7 @@ global CONFIG := {
     ; Douyin/Bilibili peaks (normal ~0.1-0.3, occasional spikes ~0.5-0.7).
     VOLUME_LEVELER_ENABLED:   true,
     VOLUME_LEVELER_INTERVAL:  100,   ; ms between samples
-    VOLUME_LEVELER_TARGET:    0.3,   ; target smoothed peak, 0.0-1.0
+    VOLUME_LEVELER_TARGET:    0.35,   ; target smoothed peak, 0.0-1.0
     VOLUME_LEVELER_DEADZONE:  0.01,  ; ignore error smaller than this
     VOLUME_LEVELER_SMOOTHING: 0.08,  ; EMA alpha
     VOLUME_LEVELER_STEP:      0.1,   ; max volume-multiplier change per sample
@@ -51,7 +51,7 @@ global CONFIG := {
     SITES: {
         youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
         bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 1000, holdSeek: true,  iframePlayer: false },
+        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
         anime:    { url: "cycani.org",   fsKey: "f", mouseCenter: true,  startupDelay: false, sleepMs: 0,    holdSeek: false, iframePlayer: true },
     },
 
