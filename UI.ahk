@@ -104,7 +104,7 @@ ShowTooltip() {
     t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
     livePeak := _GetBrowserPeak()
     t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
-    t .= "Smoothed:   " . Round(State.volumeSmoothedPeak, 4) . " (target " . CONFIG.VOLUME_LEVELER_TARGET . ")`n"
+    t .= "Smoothed:   " . _RoundTrim(State.volumeSmoothedPeak, 4) . " (target " . _RoundTrim(CONFIG.VOLUME_LEVELER_TARGET, 4) . ")`n"
     t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
     ; fresh diagnostic every refresh (re-applies current multiplier, harmless)
     ; rather than showing stale volumeDebug
@@ -171,4 +171,15 @@ ShowTooltip() {
 
     MouseGetPos(&xpos, &ypos)
     ToolTip(t, xpos + 14, ypos + 14)
+}
+
+; Round to N decimals, string-only trim of trailing zeros (no math after
+; Round(), or float noise like 0.34999999999999998 reappears).
+_RoundTrim(num, decimals := 4) {
+    s := Round(num, decimals)
+    if InStr(s, ".") {
+        s := RTrim(s, "0")
+        s := RTrim(s, ".")
+    }
+    return s
 }
