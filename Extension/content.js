@@ -88,9 +88,16 @@ function getActiveCor5() {
 // the OS media session, and can get stuck stale (e.g. Douyin swapping videos
 // mid-scroll). We push our own ground-truth isPlaying through the WebSocket
 // bridge to AHK instead of relying on that relay.
+window.__mediaCtrlSeekGraceUntil = 0;
+const SEEK_GRACE_MS = 1500; // suppress false "paused" from post-seek rebuffer stalls
+
 function updatePlaybackState() {
     const video = getActiveVideo();
-    const isPlaying = !!(video && !video.paused);
+    let isPlaying = !!(video && !video.paused);
+
+    if (!isPlaying && video && performance.now() < window.__mediaCtrlSeekGraceUntil) {
+        isPlaying = window.__mediaCtrlIsPlaying ?? isPlaying; // keep prior state during grace window
+    }
 
     if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
@@ -243,6 +250,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (video) {
                 const max = isFinite(video.duration) ? video.duration : Infinity;
                 video.currentTime = Math.min(video.currentTime + seconds, max);
+                window.__mediaCtrlSeekGraceUntil = performance.now() + SEEK_GRACE_MS;
+                setTimeout(updatePlaybackState, SEEK_GRACE_MS + 50);
             }
         }
 
@@ -252,6 +261,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const video = getActiveVideo();
             if (video) {
                 video.currentTime = Math.max(video.currentTime - seconds, 0);
+                window.__mediaCtrlSeekGraceUntil = performance.now() + SEEK_GRACE_MS;
+                setTimeout(updatePlaybackState, SEEK_GRACE_MS + 50);
             }
         }
 
