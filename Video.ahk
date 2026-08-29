@@ -30,6 +30,10 @@ _OnPlaybackInfoChanged(session, *) {
             } catch {
             }
             _EvalVideoHotkeys()
+            ; a real SMTC play/pause is as strong a signal as extPlaying —
+            ; tighten (or relax) the poll rate now rather than waiting for
+            ; whatever's left of the current TIMER_IDLE tick to elapse
+            _UpdateAdaptiveTimer()
         }
     } catch {
     }

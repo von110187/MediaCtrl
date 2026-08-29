@@ -330,15 +330,22 @@ _EvalVideoHotkeys() {
 }
 
 ; ── Adaptive timer ────────────────────────────────────────────────────────────
+; Mirrors the same "OR" trust model as _UpdateMediaState: raw SMTC status
+; alone can get stuck stale (see notes there), so also fold in extPlaying/
+; songIsPlaying — otherwise the poll rate stays parked at TIMER_IDLE while
+; a real video is playing, which is what made the URL/tabs/extPlaying files
+; (and therefore fullscreen/hotkey reactions) feel laggy.
 
 _UpdateAdaptiveTimer() {
     global State, CONFIG
 
-    anyActive := false
-    for session in State.sessions {
-        if session.PlaybackStatus = 4 {
-            anyActive := true
-            break
+    anyActive := State.extPlaying || State.songIsPlaying
+    if !anyActive {
+        for session in State.sessions {
+            if session.PlaybackStatus = 4 {
+                anyActive := true
+                break
+            }
         }
     }
 
