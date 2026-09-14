@@ -79,19 +79,15 @@ _UpdateUrlState() {
                 newPlayingTabs.Push(pipePos ? SubStr(entry, pipePos + 1) : entry)
             }
         }
-        ; Prune seen-tab cache for tabs no longer playable, with two allowances:
-        ; 1. Some players (Bilibili) mutate the URL slightly during playback
-        ;    (tracking/timestamp params) — use the same lenient substring
-        ;    match as Gate 2 below, not exact equality.
-        ; 2. A single tick's DOM blip shouldn't forget a tab immediately —
-        ;    require a few consecutive misses first.
-        ; Deletions collected and applied after the loop since mutating the
-        ; Map mid-iteration is unsafe.
+        ; Prune seen-tab cache for tabs no longer playable. Compares base
+        ; path, not the bidirectional InStr Gate 2 uses (that matched any
+        ; two videos on the same domain, so entries never got pruned).
+        ; Requires a few consecutive misses first to absorb DOM blips.
         toForget := []
         for seenUrl in State.startupDelaySeen {
             stillPresent := false
             for tabUrl in newPlayingTabs {
-                if (seenUrl = tabUrl) || InStr(seenUrl, tabUrl) || InStr(tabUrl, seenUrl) {
+                if _UrlBasePath(seenUrl) = _UrlBasePath(tabUrl) {
                     stillPresent := true
                     break
                 }
@@ -161,12 +157,24 @@ _FindMatchedSite(url) {
     return ""
 }
 
-; Same lenient substring match as the Gate 2 playability check — keeps URL
-; identity consistent so minor URL drift doesn't make a seen video look new.
+; Strips query string and fragment so ?spm_id_from=/&seid=/timestamp params
+; that Bilibili/Douyin mutate mid-playback don't make an ongoing watch look
+; like a new URL. This is intentionally narrower than Gate 2's bidirectional
+; InStr: two DIFFERENT videos on the same site share a long common URL
+; prefix (https://www.bilibili.com/video/), so that leniency was collapsing
+; every video on a domain into "already seen" after the first one — the
+; startup delay stopped firing for any subsequent video after the first.
+; Base-path equality avoids that while still tolerating real query drift.
+_UrlBasePath(url) {
+    noFragment := StrSplit(url, "#")[1]
+    return StrSplit(noFragment, "?")[1]
+}
+
 _UrlSeenForDelay(url) {
     global State
+    base := _UrlBasePath(url)
     for seenUrl in State.startupDelaySeen {
-        if (url = seenUrl) || InStr(url, seenUrl) || InStr(seenUrl, url)
+        if base = _UrlBasePath(seenUrl)
             return true
     }
     return false
