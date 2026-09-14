@@ -50,31 +50,58 @@ function mostVisible(videos) {
     return best;
 }
 
-// YouTube's hover-preview thumbnails autoplay muted <video> elements
-// independent of the real player, which could otherwise win the
-// advancing/visibility heuristics below and falsely report "playing" from a
-// hover alone. #movie_player is YouTube's stable player container, so if it
-// has a <video>, that's authoritative and skips the heuristics entirely.
-function getYouTubeRealPlayerVideo() {
-    if (!/(^|\.)youtube\.com$/.test(location.hostname)) return null;
-    const player = document.getElementById("movie_player");
-    if (!player) return null;
-    return player.querySelector("video");
+// Hover-preview thumbnails (YouTube's on the homepage/sidebar, Bilibili's on
+// the watch page's own "recommended videos" rail) autoplay muted <video>
+// elements independent of the real player. These can beat the real player in
+// the advancing/visibility heuristics below — a recommendation thumbnail is
+// often large and its preview genuinely advances, while the real player can
+// be momentarily paused/buffering. Each site's real player sits in a stable,
+// well-known container, so checking there first is authoritative and skips
+// the heuristics (and their false positives) entirely.
+const REAL_PLAYER_SELECTORS = {
+    "youtube.com": "#movie_player",
+    "bilibili.com": ".bpx-player-container, #bilibili-player, .bpx-player-video-area",
+};
+
+function getRealPlayerVideo() {
+    for (const domain in REAL_PLAYER_SELECTORS) {
+        if (!new RegExp(`(^|\\.)${domain.replace(".", "\\.")}$`).test(location.hostname)) continue;
+        for (const sel of REAL_PLAYER_SELECTORS[domain].split(",")) {
+            const player = document.querySelector(sel.trim());
+            const video = player?.querySelector("video");
+            if (video) return video;
+        }
+        return undefined; // matched domain, but its player container isn't mounted (yet) — caller should not fall through to heuristics
+    }
+    return null; // no known player container for this site — fall through to generic heuristics
+}
+
+// Fallback structural check for sites with no known player container (above)
+// or where the container lookup came up empty: a hover-preview thumbnail is
+// inside a link/card, sitting in a grid of similar siblings. The real player
+// on a watch page isn't wrapped in a link to another page. This won't catch
+// every case but adds a cheap extra guard beyond size/visibility alone.
+function looksLikeRecommendationThumbnail(v) {
+    return !!v.closest('a[href], [role="link"]');
 }
 
 function getActiveVideo() {
-    const ytVideo = getYouTubeRealPlayerVideo();
-    if (ytVideo) return ytVideo;
+    const realPlayerVideo = getRealPlayerVideo();
+    if (realPlayerVideo) return realPlayerVideo;
+    if (realPlayerVideo === undefined) return null; // known site, player not mounted — don't guess via heuristics
 
     const videos = Array.from(document.querySelectorAll("video"));
     if (videos.length === 0) return null;
     if (videos.length === 1) return videos[0];
 
-    const advancing = videos.filter(v => !v.ended && v.readyState > 2 && isActuallyAdvancing(v));
+    const nonThumbnail = videos.filter(v => !looksLikeRecommendationThumbnail(v));
+    const candidates = nonThumbnail.length > 0 ? nonThumbnail : videos;
+
+    const advancing = candidates.filter(v => !v.ended && v.readyState > 2 && isActuallyAdvancing(v));
     if (advancing.length === 1) return advancing[0];
     if (advancing.length > 1) return mostVisible(advancing) || advancing[0];
 
-    return mostVisible(videos) || videos[0];
+    return mostVisible(candidates) || candidates[0];
 }
 
 // Top-frame-only — see frame awareness note above.
@@ -91,8 +118,23 @@ function getActiveCor5() {
 window.__mediaCtrlSeekGraceUntil = 0;
 const SEEK_GRACE_MS = 1500; // suppress false "paused" from post-seek rebuffer stalls
 
+// Homepage/profile-page hover-preview thumbnails (YouTube, Bilibili) mount a
+// real, autoplaying, unmuted-looking <video> element completely outside the
+// real player, on pages urlLooksPlayable() already correctly rejects. That
+// rejection only ever reached mediaPresence/tabMediaMap (Gate 2 in AHK) —
+// updatePlaybackState() ran unconditionally on every page and forwarded the
+// hover preview's play state as extPlaying straight to AHK, bypassing Gate 2
+// entirely (StateEngine.ahk ORs extPlaying in without rechecking the URL).
+// Reuse the same urlLooksPlayable() check here so a hover preview on a
+// non-watch page can never be reported as "playing" in the first place.
+function onPlayablePage() {
+    if (!isTopFrame) return true; // iframes (e.g. cycani.org) have no top-level URL to check
+    const result = urlLooksPlayable(location.hostname, location.pathname);
+    return result !== null ? result : true; // unrecognized site: don't restrict, no heuristic for it
+}
+
 function updatePlaybackState() {
-    const video = getActiveVideo();
+    const video = onPlayablePage() ? getActiveVideo() : null;
     let isPlaying = !!(video && !video.paused);
 
     if (!isPlaying && video && performance.now() < window.__mediaCtrlSeekGraceUntil) {
