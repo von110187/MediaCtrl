@@ -29,7 +29,7 @@ global CONFIG := {
     URL_MISS_DEBOUNCE: 3,
 
     ; Lossless Scaling hotkey
-    LOSSLESS_HOTKEY: "{F2}",
+    LOSSLESS_HOTKEY: "{F1}",
 
     ; ── Volume leveler ──────────────────────────────────────────────────────
     ; Attenuation-only (Windows per-app volume can't boost past original
