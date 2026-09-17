@@ -48,10 +48,6 @@ SetTimer(ShowTooltip,       500)
 SetTimer(UpdateClockOverlay, 1000)
 SetTimer(_UpdateVolumeLeveler, CONFIG.VOLUME_LEVELER_INTERVAL)
 
-; Adam D3V shutdown check — only fires once, 30 min after startup
-if (State.activeSpeaker = "Adam D3V")
-    SetTimer(_AdamShutdownCheck, -1800000)
-
 OnExit(ExitHandler)
 ExitHandler(reason, code) {
     shell := ComObject("WScript.Shell")
