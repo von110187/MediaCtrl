@@ -28,15 +28,3 @@ InitSpeaker() {
         ; timer set in Main.ahk after InitSpeaker()
     }
 }
-
-; Called once, 30 minutes after startup, only when Adam D3V is the speaker.
-_AdamShutdownCheck() {
-    global State
-    try {
-        name := SoundGetName()
-    } catch {
-        name := ""
-    }
-    if (name != "Adam D3V")
-        Run("shutdown.exe /s /f /t 0")
-}
