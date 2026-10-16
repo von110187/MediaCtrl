@@ -194,3 +194,7 @@ _HK_F5(*) {
 
     Send("{F5}")
 }
+
+; placeholder until the video keys move to BridgeClient_Send (Task 7)
+SendCommand(cmd) {
+}

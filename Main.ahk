@@ -19,7 +19,8 @@ InitSpeaker()
 ; Deferred bridge start — avoids blocking hotkeys during npm/node startup
 SetTimer(_DeferredBridgeStart, -100)
 _DeferredBridgeStart() {
-    StartBridgeServer()
+    Bridge_WriteExtensionToken()
+    Bridge_Start()
 }
 
 ; Register dynamic video hotkeys as Off — SetVideoHotkeys() controls them
@@ -50,8 +51,7 @@ SetTimer(_UpdateVolumeLeveler, CONFIG.VOLUME_LEVELER_INTERVAL)
 
 OnExit(ExitHandler)
 ExitHandler(reason, code) {
-    shell := ComObject("WScript.Shell")
-    shell.Run 'cmd /c taskkill /f /im node.exe /t', 0, false
+    Bridge_KillAll()
 }
 
 ; ============ MAIN TICK ============

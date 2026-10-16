@@ -1,156 +1,70 @@
 ; ============ BRIDGE SERVER ============
-; Local Node.js server: WS port 9224 (extension pushes URL/tabs), HTTP port
-; 9223 (AHK sends commands to extension). Script + node_modules live next to
-; the script (A_ScriptDir) so they survive temp-folder cleanup; runtime IPC
-; files stay in A_Temp and are throwaway.
+; Starts the Node relay (bridge/bridge.js) that carries JSON between this
+; script and the Chrome extension over WebSockets on 127.0.0.1:9224, and
+; owns the shared token both sides must present. Talking to the bridge is
+; BridgeClient.ahk's job.
 
-KillPort(port) {
-    batFile := A_Temp . "\kill_port_" . port . ".bat"
-    if FileExist(batFile)
-        FileDelete(batFile)
-    q := Chr(34)
-    content := "@echo off`n"
-    content .= "for /f " . q . "tokens=5" . q . " %a in ('netstat -aon ^| find " . q . port . q . "') do taskkill /f /pid %a"
-    FileOpen(batFile, "w").Write(content)
-    shell := ComObject("WScript.Shell")
-    shell.Run 'cmd /c "' . batFile . '"', 0, true
-    Sleep(400)
-}
-
-StartBridgeServer() {
-    KillPort("9223")
-    KillPort("9224")
-    Sleep(400)
-
-    nodeScript := A_ScriptDir . "\mediactrl_bridge.js"
-    if FileExist(nodeScript)
-        FileDelete(nodeScript)
-
-    FileAppend '
-(
-const http = require("http");
-const fs   = require("fs");
-const path = require("path");
-const { WebSocketServer } = require("ws");
-
-const URL_FILE        = path.join(require("os").tmpdir(), "ahk_current_url.txt");
-const TABS_FILE       = path.join(require("os").tmpdir(), "ahk_playing_tabs.txt");
-const COR5_FILE       = path.join(require("os").tmpdir(), "ahk_cor5_href.txt");
-const EXT_PLAYING_FILE = path.join(require("os").tmpdir(), "ahk_ext_playing.txt");
-const VIDEO_CLICK_FILE = path.join(require("os").tmpdir(), "ahk_video_click.txt");
-const DEBUG_LOG_FILE  = path.join(require("os").tmpdir(), "ahk_bridge_debug.log");
-const PID_FILE        = path.join(require("os").tmpdir(), "ahk_bridge_pid.txt");
-const BRIDGE_VERSION  = "sync-writes-v3";
-
-let currentUrl  = "";
-let playingTabs = [];
-let wsClient    = null;
-
-// append-only so overlapping stale/fresh process logs stay distinguishable by PID
-function dlog(msg) {
-    try {
-        fs.appendFileSync(DEBUG_LOG_FILE, "[" + new Date().toISOString() + "] [pid " + process.pid + "] " + msg + "\n");
-    } catch (e) {}
-}
-
-// most-recently-started PID — a different node.exe in Task Manager is a stale process on the same port
-try { fs.writeFileSync(PID_FILE, "pid=" + process.pid + " version=" + BRIDGE_VERSION + " startedAt=" + new Date().toISOString()); } catch (e) {}
-dlog("=== bridge starting, version=" + BRIDGE_VERSION + " ===");
-
-// AHK sends commands via /setcommand/<cmd>
-const server = http.createServer((req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-    if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
-
-    if (req.url.startsWith("/setcommand/")) {
-        const command = req.url.replace("/setcommand/", "");
-        if (command.startsWith("navigate_")) {
-            const url = decodeURIComponent(command.replace("navigate_", ""));
-            sendToExtension({ navigate: url });
-        } else {
-            sendToExtension({ command });
-        }
-        res.writeHead(200); res.end("ok");
-    } else {
-        res.writeHead(404); res.end();
+; 32 hex chars, created once and kept next to the script (gitignored)
+Bridge_Token() {
+    static token := ""
+    if token != ""
+        return token
+    path := A_ScriptDir . "\mediactrl_token.txt"
+    try token := Trim(FileRead(path))
+    if !RegExMatch(token, "^[0-9a-f]{32}$") {
+        buf := Buffer(16)
+        DllCall("bcrypt\BCryptGenRandom", "ptr", 0, "ptr", buf, "uint", 16, "uint", 2)  ; system RNG
+        token := ""
+        Loop 16
+            token .= Format("{:02x}", NumGet(buf, A_Index - 1, "uchar"))
+        FileOpen(path, "w", "UTF-8-RAW").Write(token)
     }
-});
-
-// browser extension connects here
-const wss = new WebSocketServer({ port: 9224, host: "127.0.0.1" });
-
-wss.on("connection", (ws) => {
-    dlog("client connected");
-    // kill stale prior connection so it can't linger as a zombie (e.g. extension's old service-worker socket)
-    if (wsClient && wsClient !== ws) {
-        dlog("closing stale prior connection");
-        try { wsClient.terminate(); } catch (e) {}
-    }
-    wsClient = ws;
-    ws.on("message", (msg) => {
-        try {
-            const data = JSON.parse(msg);
-            // sync writes: avoids ordering issues between overlapping async writes; payloads are tiny
-            if (data.url !== undefined) {
-                currentUrl = data.url;
-                try { fs.writeFileSync(URL_FILE, currentUrl); } catch (e) {}
-            }
-            if (data.playingTabs) {
-                dlog("received playingTabs (" + data.playingTabs.length + "): " + JSON.stringify(data.playingTabs));
-                playingTabs = data.playingTabs;
-                try {
-                    fs.writeFileSync(TABS_FILE, playingTabs.join("\n"));
-                    dlog("wrote " + playingTabs.length + " tab(s) to " + TABS_FILE);
-                } catch (e) {
-                    dlog("writeFileSync FAILED: " + e.message);
-                }
-            }
-            if ("cor5Href" in data) {
-                try { fs.writeFileSync(COR5_FILE, data.cor5Href || ""); } catch (e) {}
-            }
-            if ("extPlaying" in data) {
-                try { fs.writeFileSync(EXT_PLAYING_FILE, data.extPlaying ? "1" : "0"); } catch (e) {}
-            }
-            if (data.videoClick) {
-                try { fs.writeFileSync(VIDEO_CLICK_FILE, "1"); } catch (e) {}
-            }
-            if (data.ping !== undefined) {
-                try { ws.send(JSON.stringify({ pong: data.ping })); } catch (e) {}
-            }
-        } catch(e) {
-            dlog("message handler error: " + e.message);
-        }
-    });
-    ws.on("close", () => { dlog("client disconnected"); if (wsClient === ws) wsClient = null; });
-});
-
-function sendToExtension(payload) {
-    if (wsClient && wsClient.readyState === 1)
-        wsClient.send(JSON.stringify(typeof payload === "string" ? { command: payload } : payload));
+    return token
 }
 
-server.listen(9223, "127.0.0.1");
-)', nodeScript
+; The extension reads Extension\token.json (gitignored). It isn't web
+; accessible, so only the extension itself can fetch it.
+Bridge_WriteExtensionToken() {
+    global CONFIG
+    FileOpen(A_ScriptDir . "\Extension\token.json", "w", "UTF-8-RAW")
+        .Write('{"token": "' . Bridge_Token() . '", "port": ' . CONFIG.BRIDGE_PORT . '}')
+}
 
-    if !DirExist(A_ScriptDir . "\node_modules\ws") {
-        ToolTip("📦 Installing ws package...")
-        wsShell := ComObject("WScript.Shell")
-        wsShell.Run 'cmd /c cd "' . A_ScriptDir . '" && npm install ws', 0, true
+Bridge_Start() {
+    global CONFIG
+    Bridge_KillAll()
+
+    bridgeDir := A_ScriptDir . "\bridge"
+    if !DirExist(bridgeDir . "\node_modules\ws") {
+        ToolTip("📦 Installing bridge packages...")
+        RunWait(A_ComSpec . ' /c npm install --no-audit --no-fund', bridgeDir, "Hide")
         ToolTip()
     }
 
-    Run('node "' . nodeScript . '"',, "Hide")
-    Sleep(1000)
+    ; the token goes to the child through its environment, not its command line
+    EnvSet("MEDIACTRL_TOKEN", Bridge_Token())
+    EnvSet("MEDIACTRL_PORT", CONFIG.BRIDGE_PORT)
+    Run('node "' . bridgeDir . '\bridge.js"', bridgeDir, "Hide")
+    EnvSet("MEDIACTRL_TOKEN")
 }
 
-SendCommand(cmd) {
+; Closes only node processes running our bridge — never other node.exe.
+; mediactrl_bridge.js is the pre-port generated bridge, killed so it can't
+; keep holding the port after an update. Returns how many were closed.
+Bridge_KillAll() {
+    closed := 0
     try {
-        http := ComObject("WinHttp.WinHttpRequest.5.1")
-        http.Open("GET", "http://127.0.0.1:9223/setcommand/" . cmd, false)
-        http.Send()
-    } catch {
+        rows := ComObjGet("winmgmts:").ExecQuery("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='node.exe'")
+        for row in rows {
+            cmd := row.CommandLine
+            if !cmd  ; unreadable (no rights) — not ours to touch
+                continue
+            if InStr(cmd, "bridge\bridge.js") || InStr(cmd, "mediactrl_bridge.js") {
+                ProcessClose(row.ProcessId)
+                ProcessWaitClose(row.ProcessId, 2)
+                closed += 1
+            }
+        }
     }
+    return closed
 }

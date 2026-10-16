@@ -2,5 +2,6 @@
 node_modules/
 package-lock.json
 
-# Generated at runtime by Bridge.ahk — rebuilt on every launch
-mediactrl_bridge.js
+# Created at runtime by Bridge.ahk — the shared bridge token
+mediactrl_token.txt
+Extension/token.json
