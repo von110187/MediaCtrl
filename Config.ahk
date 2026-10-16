@@ -31,6 +31,9 @@ global CONFIG := {
     ; Lossless Scaling hotkey
     LOSSLESS_HOTKEY: "{F1}",
 
+    ; bridge/bridge.js WebSocket port (127.0.0.1 only)
+    BRIDGE_PORT: 9224,
+
     ; ── Volume leveler ──────────────────────────────────────────────────────
     ; Attenuation-only (Windows per-app volume can't boost past original
     ; level) — quietly turns down loud videos to match the normal range
