@@ -1,5 +1,6 @@
-; LosslessPolicy: scaling follows confirmed fullscreen, manual presses hand
-; that page to the user (design.md "Lossless Scaling").
+; LosslessPolicy: scaling follows confirmed fullscreen; manual presses only
+; flip the tracked state (changed from design.md after trying it, 2026-10-17 —
+; see docs/windows-checks.md).
 
 Test_on_when_fullscreen_confirmed() {
     ls := LosslessPolicy.New()
@@ -14,23 +15,23 @@ Test_off_when_fullscreen_ends() {
     Assert(ls.on == false)
 }
 
-Test_manual_off_stays_off_for_page() {
+Test_manual_off_reenter_is_automatic() {
     ls := LosslessPolicy.New()
     LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true)
     LosslessPolicy.OnManualPress(ls, "fullscreen", "p1")
     Assert(ls.on == false)
-    Assert(LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true) == "")
+    Assert(LosslessPolicy.OnFullscreenChange(ls, "normal", "p1", true) == "", "already off")
+    Assert(LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true) == "toggle", "same page re-enters: on again")
 }
 
-Test_manual_page_stays_manual_on_reenter() {
+Test_manual_on_turned_off_on_leaving() {
     ls := LosslessPolicy.New()
     LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true)
     LosslessPolicy.OnManualPress(ls, "fullscreen", "p1")
-    Assert(LosslessPolicy.OnFullscreenChange(ls, "normal", "p1", true) == "", "already off")
-    Assert(LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true) == "", "re-enter stays manual")
     LosslessPolicy.OnManualPress(ls, "fullscreen", "p1")
     Assert(ls.on == true)
-    Assert(LosslessPolicy.OnFullscreenChange(ls, "normal", "p1", true) == "toggle", "off on leaving")
+    Assert(LosslessPolicy.OnFullscreenChange(ls, "normal", "p1", true) == "toggle")
+    Assert(ls.on == false)
 }
 
 Test_next_page_back_to_automatic() {
@@ -43,7 +44,7 @@ Test_next_page_back_to_automatic() {
 Test_manual_outside_fullscreen_left_alone() {
     ls := LosslessPolicy.New()
     LosslessPolicy.OnManualPress(ls, "normal", "p1")
-    Assert(ls.on == true && ls.manualPage == "")
+    Assert(ls.on == true && ls.pending == "")
 }
 
 Test_defer_until_chrome_foreground() {
@@ -66,7 +67,7 @@ Test_detected_state_wins() {
     Assert(LosslessPolicy.OnFullscreenChange(ls, "fullscreen", "p1", true) == "")
 }
 
-TESTS.Push(Test_on_when_fullscreen_confirmed, Test_off_when_fullscreen_ends, Test_manual_off_stays_off_for_page
-    , Test_manual_page_stays_manual_on_reenter, Test_next_page_back_to_automatic
+TESTS.Push(Test_on_when_fullscreen_confirmed, Test_off_when_fullscreen_ends, Test_manual_off_reenter_is_automatic
+    , Test_manual_on_turned_off_on_leaving, Test_next_page_back_to_automatic
     , Test_manual_outside_fullscreen_left_alone, Test_defer_until_chrome_foreground
     , Test_reload_adopt_fullscreen_assumes_on, Test_detected_state_wins)

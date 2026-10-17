@@ -1,20 +1,20 @@
 ; ============ LOSSLESS SCALING POLICY ============
 ; Pure module: no Send/WinActive/COM calls. Decides when to press the
 ; Lossless Scaling hotkey (it toggles scaling for the foreground window):
-;   - on when a video's fullscreen is confirmed, off when it ends;
-;   - a manual press during a fullscreen video hands that page to the user —
-;     no more automatic on/off for it, except "off" when it leaves fullscreen;
-;   - outside fullscreen, manual presses (e.g. for a game) are left alone;
+;   - on when a video's fullscreen is confirmed, off when it ends — every
+;     time, also when the same video re-enters fullscreen;
+;   - a manual press (F1/F2/F3) only flips what we believe the state is, so
+;     the next automatic change still goes the right way;
 ;   - a toggle wanted while Chrome isn't foreground waits until it is.
-; See design.md "Lossless Scaling".
+; See design.md "Lossless Scaling". The design's "a manual press hands that
+; video to the user" rule was dropped after trying it (docs/windows-checks.md).
 
 class LosslessPolicy {
     ; on: what we believe scaling is (tracked, or detected when available)
-    ; manualPage: pageId the user took over with a manual press
     ; pending: "on" / "off" waiting for Chrome to come to the foreground
     ; detected: SetDetected() has been used, so `on` is observed, not assumed
     static New() {
-        return {on: false, manualPage: "", pending: "", detected: false}
+        return {on: false, pending: "", detected: false}
     }
 
     ; fsState: the FsMachine state just reached ("fullscreen" | "normal").
@@ -27,12 +27,9 @@ class LosslessPolicy {
                 ls.pending := ""
                 return ""
             }
-            wanted := ls.manualPage == pageId ? ls.on : true
+            wanted := true
         } else if fsState == "normal" {
-            ; always off on leaving, even on a manual page
             wanted := false
-            if ls.on
-                ls.manualPage := ""
         } else {
             return ""
         }
@@ -47,11 +44,10 @@ class LosslessPolicy {
     }
 
     ; F1/F2/F3 pressed: the key always goes out, so scaling flips.
+    ; (fsState/pageId are unused since the manual-page rule was dropped.)
     static OnManualPress(ls, fsState, pageId) {
         ls.on := !ls.on
         ls.pending := ""
-        if fsState == "fullscreen"
-            ls.manualPage := pageId
     }
 
     ; Observed state from Lib/LosslessDetect.ahk, fed in before each change.
