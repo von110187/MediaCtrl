@@ -105,3 +105,16 @@ Review Focus 5 no longer applies.
 - Douyin: the leveler multiplier dropped on a loud video and went back to
   1.0x on a non-video page ✓.
 - Spotify outro skip fired on a silent outro after the reload ✓.
+
+## 7. F6 tooltip (Task 9) — 2026-10-17: PASS
+
+The VIDEO lines (connected, URL, site, playable/playing/ready, typing,
+fullscreen + manual exit, video keys, gave up, Lossless on/pending/detected)
+and the last 15 bridge messages show and update; PgUp/PgDn stay responsive
+with the tooltip on.
+
+## 8. Harman Kardon bass (Task 10) — 2026-10-17: PASS
+
+The default output reports as `Harman Kardon (High Definition Audio Device)`,
+so the old exact-match check never matched. With `_IsHarmanSpeaker()`:
+focusing Zenless Zone Zero → `Bass: ON`; Alt+Tab away → `Bass: OFF`.
