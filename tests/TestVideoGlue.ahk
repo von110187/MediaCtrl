@@ -25,7 +25,7 @@ class FakeEnv {
     processName() => this.fg
     send(keys) {
         this.keys.Push(keys)
-        if keys == CONFIG.LOSSLESS_HOTKEY  ; Lossless Scaling reacts to its key
+        if keys == SETTINGS.lossless.hotkey  ; Lossless Scaling reacts to its key
             this.ls := !this.ls
     }
     bridgeSend(msg) => this.msgs.Push(msg)
@@ -73,6 +73,7 @@ GlueSetup() {
     State.foregroundHwnd := 1, State.chromeHwnd := 1, State.videoHotkeys := false
     State.monitorVideo := true, State.currentProgram := "chrome.exe"
     State.levelDb := -20
+    SETTINGS.lossless.enabled := true  ; the scenarios below are this PC's setup
     return VideoEnv
 }
 
@@ -118,7 +119,7 @@ Test_glue_fullscreen_turns_lossless_on_and_keys_on() {
     env := GlueSetup()
     EnterFullscreen(env)
     Assert(State.machine.state == "fullscreen")
-    Assert(env.Pressed(CONFIG.LOSSLESS_HOTKEY) == 1 && env.ls, "Lossless on")
+    Assert(env.Pressed(SETTINGS.lossless.hotkey) == 1 && env.ls, "Lossless on")
     Assert(env.hotkeysOn, "video keys on")
 }
 
@@ -210,7 +211,7 @@ Test_glue_reload_mid_fullscreen_no_lossless_toggle() {
     env.ls := true  ; the previous AHK turned scaling on
     Report({isFullscreen: 1})
     Assert(State.machine.state == "fullscreen")
-    Assert(env.Pressed(CONFIG.LOSSLESS_HOTKEY) == 0)
+    Assert(env.Pressed(SETTINGS.lossless.hotkey) == 0)
 }
 
 Test_glue_lossless_waits_for_chrome() {
@@ -220,10 +221,10 @@ Test_glue_lossless_waits_for_chrome() {
     env.fg := "explorer.exe", env.hwnd := 2
     _CheckForeground()
     Report({isFullscreen: 0, pageId: "p2", playing: 0, ready: 0})  ; tab closed while away
-    Assert(env.Pressed(CONFIG.LOSSLESS_HOTKEY) == 1, "held back, not sent to another app")
+    Assert(env.Pressed(SETTINGS.lossless.hotkey) == 1, "held back, not sent to another app")
     env.fg := "chrome.exe", env.hwnd := 1
     _CheckForeground()
-    Assert(env.Pressed(CONFIG.LOSSLESS_HOTKEY) == 2 && !env.ls, "sent once Chrome is back")
+    Assert(env.Pressed(SETTINGS.lossless.hotkey) == 2 && !env.ls, "sent once Chrome is back")
 }
 
 Test_glue_typing_and_disconnect_turn_keys_off() {
@@ -291,6 +292,20 @@ Test_glue_config_on_connect_uses_current_level() {
     Assert(LastConfig(env).leveler.targetDb == -14)
 }
 
+; a PC without Lossless Scaling (the default): its key never goes out
+Test_glue_lossless_disabled_never_sends_its_key() {
+    env := GlueSetup()
+    SETTINGS.lossless.enabled := false
+    EnterFullscreen(env)
+    env.Advance(2000)
+    _HK_Esc()
+    Report({isFullscreen: 0})
+    _HK_Lossless()
+    Assert(env.Pressed(SETTINGS.lossless.hotkey) == 0)
+    Assert(State.machine.state == "normal", "fullscreen itself still works")
+    SETTINGS.lossless.enabled := true
+}
+
 TESTS.Push(Test_glue_playing_ready_arms_and_presses_f19, Test_glue_no_f19_into_another_app
     , Test_glue_fullscreen_turns_lossless_on_and_keys_on, Test_glue_esc_exits_lossless_off_and_stays_out
     , Test_glue_pause_then_play_reenters_after_manual_exit, Test_glue_site_button_exit_counts_as_manual
@@ -300,4 +315,4 @@ TESTS.Push(Test_glue_playing_ready_arms_and_presses_f19, Test_glue_no_f19_into_a
     , Test_glue_lossless_waits_for_chrome, Test_glue_typing_and_disconnect_turn_keys_off
     , Test_glue_seek_and_speed_keys, Test_glue_manual_lossless_press
     , Test_glue_level_keys_move_the_target, Test_glue_level_keys_stop_at_the_limits
-    , Test_glue_config_on_connect_uses_current_level)
+    , Test_glue_config_on_connect_uses_current_level, Test_glue_lossless_disabled_never_sends_its_key)

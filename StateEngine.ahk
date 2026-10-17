@@ -42,7 +42,7 @@ _UpdateHarmanBass() {
     global State, CONFIG
     prog := State.currentProgram
     shouldOn := false
-    for game in CONFIG.GAME_LIST {
+    for game in SETTINGS.speaker.gameList {
         if ProcessExist(game . ".exe") && InStr(prog, game) {
             shouldOn := true
             break
@@ -84,9 +84,8 @@ global VideoEnv := {
     clock:          (*) => UpdateClockVisibility(),
     setHotkeys:     (env, on) => _ApplyVideoHotkeys(on),
     notify:         (env, text) => (ToolTip(text, , , 2), SetTimer(() => ToolTip(, , , 2), -1200)),
-    saveLevel:      (env, db) => IniWrite(db, VIDEO_SETTINGS_FILE, "leveler", "targetDb"),
+    saveLevel:      (env, db) => IniWrite(db, SETTINGS_FILE, "leveler", "targetDb"),
 }
-VIDEO_SETTINGS_FILE := A_ScriptDir . "\mediactrl_settings.ini"
 
 _ForegroundProcessName() {
     try return WinGetProcessName("A")
@@ -95,7 +94,6 @@ _ForegroundProcessName() {
 
 VideoStart() {
     global CONFIG, State
-    try State.levelDb := Number(IniRead(VIDEO_SETTINGS_FILE, "leveler", "targetDb"))
     SetTimer(_VideoTick, CONFIG.TICK_MS)
 
     ; foreground changes (incl. fullscreen apps) arrive at once, not on the next tick
@@ -240,16 +238,16 @@ _NotifyFullscreen(adopted := false) {
 ; after we pressed the key: the overlay takes a moment to appear or go.
 _LosslessDetect() {
     global State
-    if VideoEnv.now() - State.losslessSentAt > 1500
+    if SETTINGS.lossless.enabled && VideoEnv.now() - State.losslessSentAt > 1500
         LosslessPolicy.SetDetected(State.lossless, VideoEnv.losslessActive())
 }
 
 _LosslessApply(action) {
     global State, CONFIG
-    if action != "toggle"
+    if action != "toggle" || !SETTINGS.lossless.enabled
         return
     State.losslessSentAt := VideoEnv.now()
-    _SendToChrome(CONFIG.LOSSLESS_HOTKEY)
+    _SendToChrome(SETTINGS.lossless.hotkey)
 }
 
 ; user asked to leave fullscreen (Esc, b, click on the video): exit, and

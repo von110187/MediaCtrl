@@ -1,4 +1,7 @@
 ; ============ CONFIGURATION ============
+; Shared settings live here (in git). What differs per PC — Lossless Scaling,
+; the personal keys, Spotify/speaker paths — is in SETTINGS at the bottom,
+; read from mediactrl_settings.ini.
 
 global CONFIG := {
     ; matched against SourceAppUserModelId / process name
@@ -7,15 +10,6 @@ global CONFIG := {
     ; native Spotify app — process name, used to activate (or launch) it
     ; when no SMTC session exists yet
     SONG_EXE: "Spotify.exe",
-
-    ; explicit fallback path used only if the "App Paths" registry lookup
-    ; (see _LaunchSongApp in Audio.ahk) and bare-name Run() both fail —
-    ; e.g. a portable/manual install with no registry entry.
-    SONG_EXE_PATH: "C:\Users\87\AppData\Roaming\Spotify\Spotify.exe",
-
-    ; Lossless Scaling hotkey — toggles scaling for the foreground window, so
-    ; it's only ever sent while Chrome is foreground
-    LOSSLESS_HOTKEY: "{F1}",
 
     ; bridge/bridge.js WebSocket port (127.0.0.1 only)
     BRIDGE_PORT: 9224,
@@ -48,8 +42,8 @@ global CONFIG := {
     ; Runs in the page (Extension/content.js): each video's loudness is
     ; measured and its gain moved toward targetDb, so every video plays at
     ; about the same level — quiet ones up, loud ones down — with a limiter
-    ; catching peaks. Sent to the extension with the sites. Where it can't
-    ; attach (a source Web Audio can't hear), the WASAPI leveler below runs.
+    ; catching peaks. Sent to the extension with the sites. It only attaches
+    ; to sources Web Audio can hear (all three sites); others play as they are.
     ;   targetDb   — loudness every video is brought to (RMS dBFS; higher = louder)
     ;   maxBoostDb / maxCutDb — how far a video may be turned up / down
     ;   smoothingS — seconds of sound averaged (higher = slower, steadier)
@@ -65,14 +59,30 @@ global CONFIG := {
         limiterDb:  -3,
     },
     ; - / = in video mode move targetDb by this much, within these limits; the
-    ; level you pick is remembered in mediactrl_settings.ini (gitignored)
+    ; level you pick is remembered in mediactrl_settings.ini ([leveler])
     LEVEL_STEP_DB: 2,
     LEVEL_MIN_DB:  -40,
     LEVEL_MAX_DB:  -6,
-
-    ; Game process names (without .exe)
-    GAME_LIST: ["ZenlessZoneZero"],
 }
+
+; ── Per-PC settings ─────────────────────────────────────────────────────────
+; mediactrl_settings.ini next to the script (gitignored), started from
+; mediactrl_settings.example.ini on first run. These are the defaults for
+; anything it doesn't set: a fresh PC gets the video features only.
+global SETTINGS_FILE := A_ScriptDir . "\mediactrl_settings.ini"
+SettingsFile.EnsureFile(SETTINGS_FILE, A_ScriptDir . "\mediactrl_settings.example.ini")
+global SETTINGS := SettingsFile.Load(SETTINGS_FILE, {
+    lossless: {enabled: false, hotkey: "{F1}"},
+    keys:     {volume: false, brightness: false, spotify: false, shutdown: false},
+    spotify:  {outroSkip: true, exePath: ""},
+    speaker:  {harmanBass: false, peacePath: "", games: ""},
+    leveler:  {targetDb: CONFIG.PAGE_LEVELER.targetDb},
+})
+; comma-separated process names (without .exe) → list
+SETTINGS.speaker.gameList := []
+for _game in StrSplit(SETTINGS.speaker.games, ",", " `t")
+    if _game != ""
+        SETTINGS.speaker.gameList.Push(_game)
 
 global WASAPI_CLSIDS := {
     MMDeviceEnumerator: "{BCDE0395-E52F-467C-8E3D-C4579291692E}",

@@ -3,7 +3,7 @@
 MonitorGame() {
     global State, CONFIG
 
-    for game in CONFIG.GAME_LIST {
+    for game in SETTINGS.speaker.gameList {
         exeName    := game . ".exe"
         isRunning  := ProcessExist(exeName) ? true : false
         wasRunning := State.gameRunning.Has(game) ? State.gameRunning[game] : false
@@ -46,6 +46,10 @@ VIDEO_KEYS := Map(
     "$F2",  _HK_Lossless,
     "$F3",  _HK_Lossless,
 )
+; no Lossless Scaling on this PC: F1-F3 stay Chrome's own keys
+if !SETTINGS.lossless.enabled
+    for _lossKey in ["$F1", "$F2", "$F3"]
+        VIDEO_KEYS.Delete(_lossKey)
 
 InitVideoHotkeys() {
     global VIDEO_KEYS
@@ -125,10 +129,10 @@ _HK_LevelUp(*) => VideoLevelStep(1)
 ; A manual press during a fullscreen video hands Lossless Scaling for that
 ; page to the user (Lib/LosslessPolicy.ahk).
 _HK_Lossless(*) {
-    global State, CONFIG
-    if !_ChromeFocused()
+    global State
+    if !SETTINGS.lossless.enabled || !_ChromeFocused()
         return
     LosslessPolicy.OnManualPress(State.lossless, State.machine.state, _PageId())
     State.losslessSentAt := VideoEnv.now()
-    VideoEnv.send(CONFIG.LOSSLESS_HOTKEY)
+    VideoEnv.send(SETTINGS.lossless.hotkey)
 }

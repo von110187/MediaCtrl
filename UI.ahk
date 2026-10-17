@@ -102,8 +102,9 @@ ShowTooltip() {
         t .= "           waiting for the player`n"
     if v.lastGaveUp != ""
         t .= "           fullscreen gave up at " . v.lastGaveUp . "`n"
-    t .= "Lossless:  " . (_LosslessActive(_ChromeMonitor()) ? "on" : "off")
-        . (v.lossless.pending != "" ? "  ·  " . v.lossless.pending . " when Chrome is back" : "") . "`n"
+    if SETTINGS.lossless.enabled
+        t .= "Lossless:  " . (_LosslessActive(_ChromeMonitor()) ? "on" : "off")
+            . (v.lossless.pending != "" ? "  ·  " . v.lossless.pending . " when Chrome is back" : "") . "`n"
 
     ; ── Sound ────────────────────────────────────────────────
     t .= "Volume:    " . (pageLeveled ? "levelled" : "not levelled on this page") . "`n"

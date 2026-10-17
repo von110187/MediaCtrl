@@ -16,9 +16,10 @@ InitSpeaker() {
     if _IsHarmanSpeaker() {
         ; Default bass OFF
         ; Peace EQ should be running already — launch if not
-        if !ProcessExist("Peace.exe") {
-            Run('"C:\Program Files\EqualizerAPO\config\Peace.exe"')
-            ProcessWait("Peace.exe")
+        peace := SETTINGS.speaker.peacePath
+        if !ProcessExist("Peace.exe") && peace != "" && FileExist(peace) {
+            Run('"' . peace . '"')
+            ProcessWait("Peace.exe", 10)
             Sleep(3000)
         }
         _SetBass(false)
@@ -26,8 +27,9 @@ InitSpeaker() {
 }
 
 ; Windows reports longer names like "Speakers (Harman Kardon Aura)", so this
-; is a substring match — the one rule every Harman check uses.
+; is a substring match — the one rule every Harman check uses. Off unless
+; [speaker] harmanBass is on in mediactrl_settings.ini.
 _IsHarmanSpeaker() {
     global State
-    return InStr(State.activeSpeaker, "Harman Kardon") > 0
+    return SETTINGS.speaker.harmanBass && InStr(State.activeSpeaker, "Harman Kardon") > 0
 }
