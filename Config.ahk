@@ -68,7 +68,8 @@ global CONFIG := {
 ; ── Per-PC settings ─────────────────────────────────────────────────────────
 ; mediactrl_settings.ini next to the script (gitignored), started from
 ; mediactrl_settings.example.ini on first run. These are the defaults for
-; anything it doesn't set: a fresh PC gets the video features only.
+; anything it doesn't set: a fresh PC gets the video features and the Spotify
+; outro skip, nothing else.
 global SETTINGS_FILE := A_ScriptDir . "\mediactrl_settings.ini"
 SettingsFile.EnsureFile(SETTINGS_FILE, A_ScriptDir . "\mediactrl_settings.example.ini")
 global SETTINGS := SettingsFile.Load(SETTINGS_FILE, {

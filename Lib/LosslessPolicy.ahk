@@ -6,8 +6,8 @@
 ;   - a manual press (F1/F2/F3) only flips what we believe the state is, so
 ;     the next automatic change still goes the right way;
 ;   - a toggle wanted while Chrome isn't foreground waits until it is.
-; See design.md "Lossless Scaling". The design's "a manual press hands that
-; video to the user" rule was dropped after trying it (docs/windows-checks.md).
+; (An earlier "a manual press hands that video to the user" rule was dropped
+; after trying it — docs/windows-checks.md.)
 
 class LosslessPolicy {
     ; on: what we believe scaling is (tracked, or detected when available)
@@ -44,8 +44,7 @@ class LosslessPolicy {
     }
 
     ; F1/F2/F3 pressed: the key always goes out, so scaling flips.
-    ; (fsState/pageId are unused since the manual-page rule was dropped.)
-    static OnManualPress(ls, fsState, pageId) {
+    static OnManualPress(ls) {
         ls.on := !ls.on
         ls.pending := ""
     }

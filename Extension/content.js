@@ -101,8 +101,8 @@
     // starts from the last video's gain and settles fast.
     // Only for sources Web Audio can hear (pageLogic.audioProcessable) —
     // anything else would play silent — and only once the AudioContext is
-    // running, or the routed video would be silent until a click. AHK's WASAPI
-    // leveler stands down while the state says "leveled".
+    // running, or the routed video would be silent until a click. The state's
+    // "leveled" flag says whether this page's video is levelled (F6 shows it).
 
     const AGC_TICK_MS = 100;
     let audioCtx = null;

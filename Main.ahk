@@ -32,7 +32,7 @@ _DeferredBridgeStart() {
     BridgeClient_Connect()  ; retries every 2 s until the bridge is listening
 }
 
-; Register dynamic video hotkeys as Off — SetVideoHotkeys() controls them
+; Register the video hotkeys, all Off — _SetVideoHotkeys() turns them on/off
 InitVideoHotkeys()
 
 ; Fullscreen clock overlay — hidden until the page reports fullscreen

@@ -3,7 +3,7 @@
 ; extension's page reports (via BridgeClient.ahk) feed the pure rules
 ; (Lib/Decide.ahk), the fullscreen state machine (Lib/FsMachine.ahk) and the
 ; Lossless Scaling policy (Lib/LosslessPolicy.ahk); this file carries out what
-; they decide. Port of reference/hammerspoon/video.lua.
+; they decide.
 
 UpdateState(sessions) {
     global State
@@ -138,7 +138,7 @@ _ChromeFocused() {
 }
 
 ; The monitor ({l, t, r, b}) the last foreground Chrome window is on — where
-; its fullscreen video, the clock and the speed label are. Primary if unknown.
+; its fullscreen video and the clock are. Primary if unknown.
 _ChromeMonitor() {
     global State
     monitors := []

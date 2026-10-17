@@ -1,4 +1,5 @@
-; Ported from reference/tests/test_decide.lua: same names, same assertions.
+; Lib/Decide.ahk: when to enter/exit fullscreen and when the video keys are on.
+; Same cases as the Mac version's tests.
 
 Base() {
     return {
