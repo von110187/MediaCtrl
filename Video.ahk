@@ -48,10 +48,11 @@ VIDEO_KEYS := Map(
     "$d",   _HK_HoldSpeed,  ; d / Right — tap: Right; hold: CONFIG.HOLD_SPEED
     "$Right", _HK_HoldSpeed,
     "$0",   _HK_0,     ; restart from the beginning
-    "$1",   _HK_Speed, ; 1 2 3 4 — playback speed (CONFIG.SPEEDS)
+    "$1",   _HK_Speed, ; 1 2 3 4 5 — playback speed (CONFIG.SPEEDS)
     "$2",   _HK_Speed,
     "$3",   _HK_Speed,
     "$4",   _HK_Speed,
+    "$5",   _HK_Speed,
     "$e",   _HK_e,     ; e / q — skip ±CONFIG.SEEK_SECONDS
     "$q",   _HK_q,
     "$Esc", _HK_Esc,   ; toggle fullscreen

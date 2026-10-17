@@ -56,7 +56,7 @@ global CONFIG := {
 
     TICK_MS:            250,    ; video evaluation timer
     SEEK_SECONDS:       87,     ; e / q jump size
-    SPEEDS:             [1.0, 1.5, 2.0, 3.0],  ; keys 1 2 3 4
+    SPEEDS:             [1.0, 1.5, 2.0, 3.0, 0.5],  ; keys 1 2 3 4 5
     HOLD_SPEED:         2.0,    ; d / Right held: play at this rate until released
     HOLD_TAP_MS:        300,    ; released sooner than this: a tap, sent as one Right
     CLICK_EXIT_WAIT_MS: 500,    ; b / video click: exit after the site's pause, at most this long
