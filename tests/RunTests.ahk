@@ -16,9 +16,11 @@ Assert(cond, msg := "") {
 #Include %A_ScriptDir%\..\Lib\Decide.ahk
 #Include %A_ScriptDir%\..\Lib\FsMachine.ahk
 #Include %A_ScriptDir%\..\Lib\LosslessPolicy.ahk
+#Include %A_ScriptDir%\..\Lib\Screen.ahk
 #Include %A_ScriptDir%\TestDecide.ahk
 #Include %A_ScriptDir%\TestFsMachine.ahk
 #Include %A_ScriptDir%\TestLossless.ahk
+#Include %A_ScriptDir%\TestScreen.ahk
 
 passed := 0, failed := 0
 for fn in TESTS {

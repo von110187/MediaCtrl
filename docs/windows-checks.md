@@ -124,3 +124,21 @@ focusing Zenless Zone Zero → `Bass: ON`; Alt+Tab away → `Bass: OFF`.
 Replaces Bilibili/Douyin-only "hold d = hold Right". On YouTube, Bilibili and
 Douyin: a tap of `d` or Right seeks as before; holding either plays at 2×
 (set by the extension) and returns to the previous speed on release ✓.
+
+## 10. Page leveler, hold safety net, monitor-aware Lossless and clock — 2026-10-17
+
+- **Page leveler:** a first version (a Web Audio compressor) attached on all
+  three sites but didn't even out loudness between videos — "same as the
+  volume I set". Replaced with AGC (measure each video's loudness, move its
+  gain toward one target, limiter after). Re-checked on Douyin, Bilibili and
+  YouTube: "Even now, sounds good" ✓. F6 shows `Page leveler: on`, and the
+  WASAPI leveler stands down on those pages (its Smoothed/Multiplier stay idle).
+- **2× hold safety net:** holding `d` ~4 s stays at 2× throughout (AHK's
+  keep-alive arrives), and returns to normal on release ✓. The expiry path
+  (keep-alive stops → normal after 1.5 s) wasn't forced live.
+- **Lossless detection on Chrome's monitor:** `detected: yes` while scaling,
+  `no` after Esc ✓. Single 5120x2160 monitor here, so the per-monitor part
+  only matters with a second screen.
+- **Clock on Chrome's monitor:** still in its usual spot ✓.
+- **On-screen speed label:** built and shown working, then removed at the
+  user's request ("quite useless").

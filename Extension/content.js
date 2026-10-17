@@ -1,19 +1,22 @@
 // Reports this page's video state to background.js (→ AHK) and runs
-// its commands: fullscreen via the F19 nudge, exit, seek, speed.
-// Site settings come from chrome.storage.local "sites", written by
-// background.js from AHK's Config.ahk SITES.
+// its commands: fullscreen via the F19 nudge, exit, seek, speed, hold-speed.
+// Also evens out loudness between videos in the page (page leveler, AGC).
+// Site and leveler settings come from chrome.storage.local "sites" /
+// "leveler", written by background.js from AHK's Config.ahk.
 (function () {
     if (window.__mediaCtrlInjected) return;
     window.__mediaCtrlInjected = true;
 
-    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive } = globalThis.pageLogic;
+    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb } = globalThis.pageLogic;
 
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
     const BUTTON_WAIT_MS = 300;   // site button gets this long before the fallback
     const REPORT_THROTTLE_MS = 250;
+    const HOLD_SPEED_EXPIRE_MS = 1500;  // AHK re-sends holdSpeed every 500 ms while held
 
     let sites = {};
+    let leveler = {};
     let pageId = newPageId();
     let lastHref = location.href;
     let lastSent = "";
@@ -89,6 +92,69 @@
         return video?.parentElement ?? null;
     }
 
+    // ── Page leveler (AGC) ──────────────────────────────────────────────────
+    // Brings every video to the same loudness: the video's sound is measured
+    // (RMS over a few seconds) and a gain moves it toward leveler.targetDb —
+    // up for quiet videos, down for loud ones, within maxBoostDb/maxCutDb — and
+    // a limiter after it catches peaks. Silence holds the gain. A new video
+    // starts from the last video's gain and settles fast.
+    // Only for sources Web Audio can hear (pageLogic.audioProcessable) —
+    // anything else would play silent — and only once the AudioContext is
+    // running, or the routed video would be silent until a click. AHK's WASAPI
+    // leveler stands down while the state says "leveled".
+
+    const AGC_TICK_MS = 100;
+    let audioCtx = null;
+    let agcTimer = null;
+    let agcLastGain = 1;
+    let activeVideo = null;      // from the last buildState(), so the AGC loop
+                                 // doesn't disturb isActuallyAdvancing's sampling
+    const agcs = new WeakMap();  // video -> { analyser, gain, buf, levelDb, heardMs }
+
+    function levelVideo(video) {
+        if (!leveler.enabled || !video || agcs.has(video)) return;
+        if (!audioProcessable(video.currentSrc, location.origin, video.crossOrigin)) return;
+        try {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state !== "running") {
+                audioCtx.resume().catch(() => {});  // needs a user gesture; retried on the next report
+                return;
+            }
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 4096;
+            const gain = audioCtx.createGain();
+            gain.gain.value = agcLastGain;
+            const limiter = audioCtx.createDynamicsCompressor();
+            limiter.threshold.value = leveler.limiterDb;
+            limiter.knee.value = 0;
+            limiter.ratio.value = 20;
+            limiter.attack.value = 0.002;
+            limiter.release.value = 0.1;
+            const source = audioCtx.createMediaElementSource(video);
+            source.connect(analyser);  // measured before the gain, so no feedback
+            source.connect(gain).connect(limiter).connect(audioCtx.destination);
+            agcs.set(video, { analyser, gain, buf: new Float32Array(analyser.fftSize), levelDb: null, heardMs: 0 });
+            if (!agcTimer) agcTimer = setInterval(agcTick, AGC_TICK_MS);
+        } catch (e) {
+            // e.g. the element is already routed by the page itself — leave it alone
+        }
+    }
+
+    function agcTick() {
+        const video = activeVideo;
+        const agc = video && agcs.get(video);
+        if (!agc || video.paused || audioCtx.state !== "running") return;
+        agc.analyser.getFloatTimeDomainData(agc.buf);
+        const db = rmsDb(agc.buf);
+        if (!(db > leveler.silenceDb)) return;  // silence or a gap: hold the gain
+        agc.heardMs += AGC_TICK_MS;
+        // averaging time grows to smoothingS over the first seconds of sound
+        const tauMs = Math.min(leveler.smoothingS * 1000, agc.heardMs + 300);
+        agc.levelDb = agc.levelDb === null ? db : agc.levelDb + (AGC_TICK_MS / tauMs) * (db - agc.levelDb);
+        agcLastGain = Math.pow(10, agcGainDb(agc.levelDb, leveler) / 20);
+        agc.gain.gain.setTargetAtTime(agcLastGain, audioCtx.currentTime, 0.3);
+    }
+
     // ── State reporting ─────────────────────────────────────────────────────
 
     function buildState() {
@@ -102,6 +168,8 @@
         const urlResult = site ? urlLooksPlayable(site.key, location.pathname) : false;
         const playable = urlResult !== null ? urlResult : !!video;
         const hasFsTarget = !!findFsButton(site, video) || !!fullscreenTarget(site, video);
+        activeVideo = video;
+        levelVideo(video);
 
         return {
             type: "state",
@@ -115,6 +183,7 @@
             // bar, dialogs): the page lacks focus, keys must pass through
             editableFocused: !document.hasFocus() || isEditable(innermostActive(document)),
             pageId,
+            leveled: !!video && agcs.has(video),
         };
     }
 
@@ -226,7 +295,16 @@
 
     // ── Commands from AHK ───────────────────────────────────────────────────
 
-    let holdSpeed = null;  // { video, rate } while d / Right is held
+    let holdSpeed = null;  // { video, rate, timer } while d / Right is held
+
+    // restores the speed from before the hold — on release, or when AHK's
+    // keep-alive stops arriving (bridge dropped mid-hold)
+    function endHoldSpeed() {
+        if (!holdSpeed) return;
+        clearTimeout(holdSpeed.timer);
+        setRate(holdSpeed.video, holdSpeed.rate);
+        holdSpeed = null;
+    }
 
     function setRate(video, rate) {
         video.playbackRate = rate;
@@ -253,17 +331,20 @@
             seekGraceUntil = performance.now() + SEEK_GRACE_MS;
             setTimeout(() => report(false), SEEK_GRACE_MS + 50);
         } else if (msg.type === "speed" && video && typeof msg.rate === "number") {
-            holdSpeed = null;  // an explicit speed wins over a hold in progress
+            // an explicit speed wins over a hold in progress
+            if (holdSpeed) { clearTimeout(holdSpeed.timer); holdSpeed = null; }
             setRate(video, msg.rate);
         } else if (msg.type === "holdSpeed") {
             // d / Right held in AHK: fast while held, then back to the rate
             // (and the video) it was before, even if the feed moved on
-            if (msg.on && video && !holdSpeed && typeof msg.rate === "number") {
-                holdSpeed = { video, rate: video.playbackRate };
+            if (msg.on && holdSpeed) {
+                clearTimeout(holdSpeed.timer);  // keep-alive
+                holdSpeed.timer = setTimeout(endHoldSpeed, HOLD_SPEED_EXPIRE_MS);
+            } else if (msg.on && video && typeof msg.rate === "number") {
+                holdSpeed = { video, rate: video.playbackRate, timer: setTimeout(endHoldSpeed, HOLD_SPEED_EXPIRE_MS) };
                 setRate(video, msg.rate);
-            } else if (!msg.on && holdSpeed) {
-                setRate(holdSpeed.video, holdSpeed.rate);
-                holdSpeed = null;
+            } else if (!msg.on) {
+                endHoldSpeed();
             }
         } else if (msg.type === "probe") {
             probe();
@@ -272,9 +353,16 @@
 
     // ── Triggers ────────────────────────────────────────────────────────────
 
-    chrome.storage.local.get("sites", (s) => { sites = s.sites || {}; report(true); });
+    chrome.storage.local.get(["sites", "leveler"], (s) => {
+        sites = s.sites || {};
+        leveler = s.leveler || {};
+        report(true);
+    });
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && changes.sites) { sites = changes.sites.newValue || {}; report(true); }
+        if (area !== "local") return;
+        if (changes.sites) sites = changes.sites.newValue || {};
+        if (changes.leveler) leveler = changes.leveler.newValue || {};
+        if (changes.sites || changes.leveler) report(true);
     });
 
     document.addEventListener("fullscreenchange", () => report(false));

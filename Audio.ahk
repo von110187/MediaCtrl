@@ -111,7 +111,9 @@ _UpdateVolumeLeveler() {
     if !CONFIG.VOLUME_LEVELER_ENABLED
         return
 
-    active := State.page && State.page.site && State.page.playing
+    ; the page leveler (Extension/content.js) does the job where it attached
+    pageLeveled := State.page && State.page.HasOwnProp("leveled") && State.page.leveled
+    active := State.page && State.page.site && State.page.playing && !pageLeveled
     if !active {
         if State.volumeMultiplier != 1.0 {
             State.volumeMultiplier   := 1.0

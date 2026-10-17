@@ -51,7 +51,35 @@
         return el ?? null;
     }
 
-    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive };
+    // Whether a <video>'s audio can go through Web Audio without being muted:
+    // cross-origin media without CORS plays silent once routed there, and an
+    // element can never be un-routed. MSE players (YouTube, Bilibili) use
+    // blob: URLs, which are fine.
+    function audioProcessable(src, pageOrigin, crossOriginAttr) {
+        if (!src) return false;
+        if (src.startsWith("blob:")) return true;
+        if (crossOriginAttr) return true;  // the element would fail to load at all without CORS
+        try {
+            return new URL(src).origin === pageOrigin;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // RMS level of a block of samples, in dBFS (-Infinity for silence)
+    function rmsDb(samples) {
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+        return 10 * Math.log10(sum / samples.length);
+    }
+
+    // Page leveler (AGC): gain in dB that brings a measured level to
+    // cfg.targetDb, at most cfg.maxBoostDb up and cfg.maxCutDb down
+    function agcGainDb(levelDb, cfg) {
+        return Math.max(-cfg.maxCutDb, Math.min(cfg.maxBoostDb, cfg.targetDb - levelDb));
+    }
+
+    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb };
     globalThis.pageLogic = api;
     if (typeof module !== "undefined") module.exports = api;
 })();
