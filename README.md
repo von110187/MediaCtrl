@@ -60,7 +60,6 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 **Speaker / bass EQ**
 - Detects the active playback device once at startup.
 - If it's a specific speaker, toggles a bass-boost EQ preset (via Peace/EqualizerAPO hotkeys) on/off depending on whether a specific game is the focused, running window.
-- If it's a different specific speaker, arms a one-shot 30-minute check that shuts the PC down if that speaker is no longer present (i.e. got unplugged/switched).
 
 **Hotkeys & system glue**
 - Media key remaps (play/pause, skip, a forced shutdown bound to one of the keys — careful with that one).
@@ -125,8 +124,8 @@ All user-specific values live in `Config.ahk`:
 
 This repo reflects one specific desk setup, and several pieces are hardcoded rather than configurable:
 
-- Absolute install paths (`C:\Program Files\...`) for Equalizer APO/Peace, Lossless Scaling, and a specific game.
-- Speaker logic keyed to specific hardware names (`Harman Kardon`, `Adam D3V`), including a **shutdown-on-disconnect** behavior for the latter.
+- An absolute install path (`C:\Program Files\...`) for Equalizer APO/Peace.
+- Speaker logic keyed to a specific hardware name (`Harman Kardon`).
 - A media key (`Media_Prev`) is remapped to force a shutdown.
 - F19 is used as the "fullscreen now" nudge, so it must be free on this PC.
 
@@ -143,7 +142,7 @@ If you're adapting this for your own use, start with `Config.ahk` and `Hotkeys.a
 | `Video.ahk` | Game monitor, video-mode hotkey handlers |
 | `Audio.ahk` | Spotify outro detection and playback controls |
 | `Wasapi.ahk` | The WASAPI audio-session loop (Spotify's peak meter) |
-| `Speaker.ahk` | Startup speaker detection, bass EQ, Adam D3V shutdown watchdog |
+| `Speaker.ahk` | Startup speaker detection, bass EQ |
 | `Bridge.ahk` | Token, `Extension/token.json`, starting/killing the Node bridge |
 | `BridgeClient.ahk` | AHK's WebSocket client to the bridge (connect, send, reconnect) |
 | `Hotkeys.ahk` | Static (always-on) hotkeys |

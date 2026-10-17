@@ -38,10 +38,3 @@ $Media_Play_Pause:: _SongTogglePlayPause()
 $Media_Next::       _SongSkipPrevious()   ; next button → skip previous
 $Media_Prev::       Run("shutdown.exe /s /f /t 0")
 $Insert::           _SongSkipNext()
-
-; ── ZZZ launcher ─────────────────────────────────────────────────────────────
-$AppsKey:: {
-    if ProcessExist("ZenlessZoneZero.exe")
-        return
-    Run('"C:\Program Files\Epic Games\ZenlessZoneZero\games\ZenlessZoneZero Game\ZenlessZoneZero.exe"')
-}
