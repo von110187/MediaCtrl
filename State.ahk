@@ -3,7 +3,6 @@
 global State := {
     ; session cache — populated once per tick, shared across monitors
     sessions:        [],
-    currentInterval: 0,
 
     currentProgram: "",  ; active window process name
 
@@ -39,7 +38,4 @@ global State := {
 
     showTooltip: false,
 
-    startupTime: A_TickCount,
-
-    bridgeLog: [],  ; recent bridge messages, newest last — for debugging (tray → View → Variables)
 }

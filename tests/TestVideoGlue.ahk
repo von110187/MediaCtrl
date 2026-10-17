@@ -71,7 +71,7 @@ GlueSetup() {
     State.lossless := LosslessPolicy.New(), State.losslessSentAt := 0
     State.lastFsState := "normal", State.pendingExit := false, State.lastGaveUp := ""
     State.foregroundHwnd := 1, State.chromeHwnd := 1, State.videoHotkeys := false
-    State.monitorVideo := true, State.bridgeLog := [], State.currentProgram := "chrome.exe"
+    State.monitorVideo := true, State.currentProgram := "chrome.exe"
     State.levelDb := -20
     return VideoEnv
 }

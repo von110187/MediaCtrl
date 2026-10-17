@@ -44,9 +44,9 @@ try {
 } catch {
 }
 
-; Adaptive timer — tightens when media is active
-State.currentInterval := CONFIG.TIMER_IDLE
-SetTimer(MonitorTick, CONFIG.TIMER_IDLE)
+; Main tick: Spotify state and its silent-outro check (the video side has
+; its own timer and the extension's reports)
+SetTimer(MonitorTick, 1000)
 
 ; Page-tracked fullscreen and video keys (StateEngine.ahk)
 VideoStart()
@@ -68,7 +68,7 @@ MonitorTick() {
     try {
         sessions := Media.GetSessions()
     } catch as err {
-        ; keep last known sessions so URL/tab tracking doesn't freeze on a COM hiccup
+        ; keep last known sessions so Spotify tracking doesn't freeze on a COM hiccup
         try FileAppend(A_Now . " GetSessions failed: " . err.Message . "`n", A_Temp . "\ahk_getsessions_errors.log")
         sessions := State.sessions
     }

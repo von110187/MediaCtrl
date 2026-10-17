@@ -78,12 +78,6 @@ function connect() {
 async function refreshActiveTab() {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (tab) activeTabId = tab.id;
-    log("active tab " + (tab ? tab.id + " " + (tab.url || "").slice(0, 40) : "none"));
-}
-
-// debug lines show up in AHK's State.bridgeLog (F6 tooltip)
-function log(text) {
-    send({ type: "log", text });
 }
 
 function askActiveTabForState() {
