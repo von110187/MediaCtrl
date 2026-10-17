@@ -12,7 +12,6 @@ UpdateState(sessions) {
     try {
         _UpdateProgramState()
         _UpdateSongState(sessions)
-        _UpdateAdaptiveTimer()
     } catch as err {
         ; Swallow COM errors during session churn — next tick recovers
     }
@@ -63,29 +62,6 @@ _UpdateSongState(sessions) {
             playing := session.PlaybackStatus = 4
     }
     State.songIsPlaying := playing
-}
-
-; ── Adaptive timer ────────────────────────────────────────────────────────────
-; Tightens the main tick (Spotify outro check) while anything is playing.
-
-_UpdateAdaptiveTimer() {
-    global State, CONFIG
-
-    anyActive := State.songIsPlaying || (State.page && State.page.playing)
-    if !anyActive {
-        for session in State.sessions {
-            if session.PlaybackStatus = 4 {
-                anyActive := true
-                break
-            }
-        }
-    }
-
-    interval := anyActive ? CONFIG.TIMER_ACTIVE : CONFIG.TIMER_IDLE
-    if State.currentInterval != interval {
-        State.currentInterval := interval
-        SetTimer(MonitorTick, interval)
-    }
 }
 
 ; ============ VIDEO ============
@@ -241,7 +217,6 @@ _VideoRun(cmd) {
                 _SendToChrome(site.fsKey)
         case "gaveUp":
             State.lastGaveUp := FormatTime(, "HH:mm:ss")
-            _BridgeLogAdd("gaveUp", "no fullscreen confirmation")
     }
     _NotifyFullscreen()
 }
@@ -349,13 +324,10 @@ OnBridgeMessage(msg) {
         case "extConnected":
             ; (re)connected to the bridge, or the extension came or went
             _SendVideoConfig()
-            _BridgeLogAdd(msg.type, msg.connected ? "yes" : "no")
             VideoEvaluate(false)
         case "state":
-            _BridgeLogAdd(msg.type, msg.site . (msg.playing ? " ▶" : "") . (msg.isFullscreen ? " fs" : "") . (msg.editableFocused ? " typing" : ""))
             _VideoOnState(msg)
         case "armed":
-            _BridgeLogAdd(msg.type)
             ; only for a real, current enter request on this page
             p := State.page
             if State.machine.state != "entering" || !p || msg.pageId !== p.pageId || msg.pageId !== State.machine.pageId
@@ -363,25 +335,12 @@ OnBridgeMessage(msg) {
             ; not from inside the socket callback
             VideoEnv.later(() => _SendToChrome("{F19}"), 1)
         case "enterFailed":
-            _BridgeLogAdd(msg.type)
             _VideoRun(FsMachine.EnterFailed(State.machine, VideoEnv.now()))
         case "videoClick":
-            _BridgeLogAdd(msg.type)
             ; the site's own click handler pauses the video; exit once that lands
             if State.machine.state == "fullscreen" && State.page && State.page.playing
                 _VideoExitAfterPause()
-        case "log":
-            _BridgeLogAdd(msg.type, msg.HasOwnProp("text") ? msg.text : "")
-        default:
-            _BridgeLogAdd(msg.type)
     }
-}
-
-_BridgeLogAdd(type, detail := "") {
-    global State
-    State.bridgeLog.Push(FormatTime(, "HH:mm:ss") . "  " . type . (detail != "" ? "  " . SubStr(detail, 1, 50) : ""))
-    if State.bridgeLog.Length > 30
-        State.bridgeLog.RemoveAt(1)
 }
 
 ; The extension's settings: the sites, and the page leveler with the target

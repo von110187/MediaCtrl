@@ -65,7 +65,6 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - Media key remaps (play/pause, skip, a forced shutdown bound to one of the keys — careful with that one).
 - Volume and brightness key forwarding (PgUp/PgDn, Home/End → a brightness tool).
 - `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, whether the page's volume is levelled, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player) show only when they happen.
-- `F9`/`F10` manually force the bass EQ off/on.
 
 Removed in the page-tracked rewrite: `F5` (in video mode — Chrome's own F5 reloads, and Lossless switches off through the page's report), `F8` (next episode), the `LButton` click hook (the extension reports clicks), and the `Ctrl+W` state hack (closing the tab is reported as a page change).
 
@@ -106,7 +105,7 @@ All user-specific values live in `Config.ahk`:
 
 | Setting | Purpose |
 |---|---|
-| `SONG` / `BROWSER` | Process name fragments used to match SMTC/WASAPI sessions (e.g. `spotify`, `chrome`) |
+| `SONG` | Process name fragment used to match Spotify's SMTC/WASAPI sessions (`spotify`) |
 | `SONG_EXE` | Native Spotify executable name, used to activate/launch it when no SMTC session exists yet (e.g. `Spotify.exe`) |
 | `SITES` | Per-site settings, sent to the extension: domain, the site's fullscreen button, the player container, the fallback fullscreen key |
 | `TICK_MS` | Video evaluation timer (ms) |
@@ -114,7 +113,6 @@ All user-specific values live in `Config.ahk`:
 | `HOLD_SPEED` / `HOLD_TAP_MS` | Rate while `d`/Right is held, and how short a press counts as a tap |
 | `CLICK_EXIT_WAIT_MS` | How long `b`/a video click waits for the site's pause before exiting anyway |
 | `GAME_LIST` | Process names that trigger bass-on behavior when focused |
-| `TIMER_ACTIVE` / `TIMER_IDLE` | Main tick interval (ms) while media is/isn't active |
 | `LOSSLESS_HOTKEY` | Key sent to toggle Lossless Scaling |
 | `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
 | `PAGE_LEVELER` | The in-page loudness leveler: on/off, default target level, max boost/cut, averaging time, silence and limiter levels |

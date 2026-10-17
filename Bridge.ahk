@@ -49,8 +49,7 @@ Bridge_Start() {
 }
 
 ; Closes only node processes running our bridge — never other node.exe.
-; mediactrl_bridge.js is the pre-port generated bridge, killed so it can't
-; keep holding the port after an update. Returns how many were closed.
+; Returns how many were closed.
 Bridge_KillAll() {
     closed := 0
     try {
@@ -59,7 +58,7 @@ Bridge_KillAll() {
             cmd := row.CommandLine
             if !cmd  ; unreadable (no rights) — not ours to touch
                 continue
-            if InStr(cmd, "bridge\bridge.js") || InStr(cmd, "mediactrl_bridge.js") {
+            if InStr(cmd, "bridge\bridge.js") {
                 ProcessClose(row.ProcessId)
                 ProcessWaitClose(row.ProcessId, 2)
                 closed += 1

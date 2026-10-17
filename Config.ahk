@@ -1,12 +1,8 @@
 ; ============ CONFIGURATION ============
 
 global CONFIG := {
-    TIMER_ACTIVE:    250,
-    TIMER_IDLE:      1000,
-
     ; matched against SourceAppUserModelId / process name
     SONG:    "spotify",
-    BROWSER: "chrome",
 
     ; native Spotify app — process name, used to activate (or launch) it
     ; when no SMTC session exists yet

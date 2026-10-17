@@ -135,14 +135,3 @@ _SpotifyLine() {
     }
     return "—"
 }
-
-; Round to N decimals, string-only trim of trailing zeros (no math after
-; Round(), or float noise like 0.34999999999999998 reappears).
-_RoundTrim(num, decimals := 4) {
-    s := Round(num, decimals)
-    if InStr(s, ".") {
-        s := RTrim(s, "0")
-        s := RTrim(s, ".")
-    }
-    return s
-}
