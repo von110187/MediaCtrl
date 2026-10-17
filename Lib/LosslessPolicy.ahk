@@ -6,8 +6,6 @@
 ;   - a manual press (F1/F2/F3) only flips what we believe the state is, so
 ;     the next automatic change still goes the right way;
 ;   - a toggle wanted while Chrome isn't foreground waits until it is.
-; (An earlier "a manual press hands that video to the user" rule was dropped
-; after trying it — docs/windows-checks.md.)
 
 class LosslessPolicy {
     ; on: what we believe scaling is (tracked, or detected when available)

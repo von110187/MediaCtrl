@@ -9,7 +9,7 @@ Base() {
     }
 }
 
-; the Lua lesson: an empty/false override must really replace the field
+; an empty/false override must really replace the field (checked below)
 With(changes) {
     inp := Base()
     for k, v in changes.OwnProps()
