@@ -71,7 +71,6 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - Volume and brightness key forwarding (PgUp/PgDn, Home/End → a brightness tool).
 - `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, which leveler is handling the volume, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player, volume errors) show only when they happen.
 - `F9`/`F10` manually force the bass EQ off/on.
-- A watchdog that closes Lossless Scaling when a GPU-heavy app (LM Studio) is running.
 
 Removed in the page-tracked rewrite: `F5` (in video mode — Chrome's own F5 reloads, and Lossless switches off through the page's report), `F8` (next episode), the `LButton` click hook (the extension reports clicks), and the `Ctrl+W` state hack (closing the tab is reported as a page change).
 
@@ -147,7 +146,7 @@ If you're adapting this for your own use, start with `Config.ahk` and `Hotkeys.a
 | `Config.ahk` | All user-tunable settings, including the video sites |
 | `State.ahk` | Shared global state object |
 | `StateEngine.ahk` | Program/Spotify state, and the video glue: page reports → rules → fullscreen requests, Lossless, video keys on/off |
-| `Video.ahk` | Game/LM Studio monitors, video-mode hotkey handlers |
+| `Video.ahk` | Game monitor, video-mode hotkey handlers |
 | `Audio.ahk` | Spotify outro detection, browser volume leveler, playback controls |
 | `Wasapi.ahk` | The one WASAPI audio-session loop shared by `Audio.ahk` |
 | `Speaker.ahk` | Startup speaker detection, bass EQ, Adam D3V shutdown watchdog |
