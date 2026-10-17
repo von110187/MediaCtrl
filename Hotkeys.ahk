@@ -19,18 +19,30 @@ F7:: {
     }
 }
 
-; ── Volume ────────────────────────────────────────────────────────────────────
+; ── Personal key groups ──────────────────────────────────────────────────────
+; Each group is on only if mediactrl_settings.ini [keys] says so; otherwise the
+; keys do what Windows normally does (PgUp scrolls, Home/End move, ...).
+
+; Volume
+#HotIf SETTINGS.keys.volume
 F13::  Volume_Down
 F14::  Volume_Up
 PgDn:: Volume_Down
 PgUp:: Volume_Up
 
-; ── Brightness via Twinkle Tray ──────────────────────────────────────────────
+; Brightness via Twinkle Tray (its hotkeys set to F15 / F16)
+#HotIf SETTINGS.keys.brightness
 End::  Send("{F15}")
 Home:: Send("{F16}")
 
-; ── Media keys ───────────────────────────────────────────────────────────────
+; Spotify media keys
+#HotIf SETTINGS.keys.spotify
 $Media_Play_Pause:: _SongTogglePlayPause()
 $Media_Next::       _SongSkipPrevious()   ; next button → skip previous
-$Media_Prev::       Run("shutdown.exe /s /f /t 0")
 $Insert::           _SongSkipNext()
+
+; Immediate shutdown, no prompt
+#HotIf SETTINGS.keys.shutdown
+$Media_Prev::       Run("shutdown.exe /s /f /t 0")
+
+#HotIf

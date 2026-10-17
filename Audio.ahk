@@ -4,7 +4,7 @@
 MonitorAudio(sessions) {
     global CONFIG
     for session in sessions {
-        if InStr(session.SourceAppUserModelId, CONFIG.SONG)
+        if SETTINGS.spotify.outroSkip && InStr(session.SourceAppUserModelId, CONFIG.SONG)
             _CheckSongOutro(session)
     }
 }
@@ -221,8 +221,8 @@ _LaunchSongApp() {
     }
     ; last-resort explicit path, e.g. portable install with no registry entry
     try {
-        if CONFIG.HasOwnProp("SONG_EXE_PATH") && FileExist(CONFIG.SONG_EXE_PATH) {
-            Run('"' . CONFIG.SONG_EXE_PATH . '"')
+        if SETTINGS.spotify.exePath != "" && FileExist(SETTINGS.spotify.exePath) {
+            Run('"' . SETTINGS.spotify.exePath . '"')
             return true
         }
     } catch {
