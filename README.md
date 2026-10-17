@@ -32,7 +32,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 **Lossless Scaling follows fullscreen**
 - Turns on when a video's fullscreen is confirmed and off when it ends — so F5, Ctrl+W, the site button and double-click all switch it off through the page's report.
 - The Lossless key is only ever sent while Chrome is the foreground app; a change confirmed while Chrome isn't in front waits until it is.
-- Scaling state is detected from Lossless Scaling's overlay window, so the key is only sent when the state actually differs. F1/F2/F3 (video mode) still toggle it by hand; the next automatic change goes the right way.
+- Scaling state is detected from Lossless Scaling's overlay window — only an overlay over Chrome's monitor counts — so the key is only sent when the state actually differs. F1/F2/F3 (video mode) still toggle it by hand; the next automatic change goes the right way.
 - After an AHK reload mid-fullscreen, scaling is assumed to still be on (no extra toggle).
 
 **Typing passes through**
@@ -45,13 +45,17 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - `F1 F2 F3` → Lossless Scaling hotkey passthrough.
 - `F7` toggles video-mode monitoring on/off entirely (exits fullscreen if currently in it).
 
-**Volume leveler**
-- Reactively attenuates the browser's per-app WASAPI volume while a matched site is playing, smoothing out videos that are recorded louder/quieter than each other so they sound roughly consistent as you scroll a feed.
+**Page leveler (every video at the same loudness)**
+- Runs inside the page: each video's loudness is measured over a few seconds and its gain moved toward one target level — quiet videos are turned up, loud ones down (±18 dB by default) — with a limiter catching peaks. Gaps and silence hold the gain; a new video starts from the last one's gain and settles within about a second.
+- Only attaches to video sources Web Audio can process (YouTube/Bilibili's streaming players, same-origin media), because anything else would play silent. Tuned via `CONFIG.PAGE_LEVELER`.
+
+**Volume leveler (fallback)**
+- Used only on pages where the page leveler couldn't attach. Reactively attenuates the browser's per-app WASAPI volume while a matched site is playing, smoothing out videos that are recorded louder/quieter than each other so they sound roughly consistent as you scroll a feed.
 - Attenuation-only (can turn a loud video down, never boost a quiet one past its own peak) — tuned via `CONFIG.VOLUME_LEVELER_*` (target peak, smoothing, step size, floor).
 - Resets the browser back to full volume once you're not watching, so it doesn't stay quiet for unrelated tabs.
 
 **Fullscreen clock overlay**
-- A small, click-through clock in the top-right corner while in fullscreen video, filling the gap left by Windows' taskbar clock being hidden.
+- A small, click-through clock in the top-right corner of Chrome's monitor while in fullscreen video, filling the gap left by Windows' taskbar clock being hidden.
 
 **Spotify silent-outro skipping**
 - Polls WASAPI peak metering for the native Spotify app (`Spotify.exe`) and auto-skips to the next track if audio is playing but silent in the last 10 seconds of a track — catches silent outros that don't change Spotify's reported playback status.
@@ -119,7 +123,8 @@ All user-specific values live in `Config.ahk`:
 | `TIMER_ACTIVE` / `TIMER_IDLE` | Main tick interval (ms) while media is/isn't active |
 | `LOSSLESS_HOTKEY` | Key sent to toggle Lossless Scaling |
 | `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
-| `VOLUME_LEVELER_ENABLED` | Master on/off for the volume leveler |
+| `PAGE_LEVELER` | The in-page loudness leveler: on/off, target level, max boost/cut, averaging time, silence and limiter levels |
+| `VOLUME_LEVELER_ENABLED` | Master on/off for the fallback (WASAPI) volume leveler |
 | `VOLUME_LEVELER_TARGET` / `_MIN` | Target smoothed peak and attenuation floor (0.0–1.0) |
 | `VOLUME_LEVELER_SMOOTHING` / `_STEP` / `_INTERVAL` | EMA smoothing factor, max change per sample, sample interval (ms) |
 
@@ -153,12 +158,13 @@ If you're adapting this for your own use, start with `Config.ahk` and `Hotkeys.a
 | `Lib/Decide.ahk` | Pure rules: enter/exit fullscreen, video keys on/off, manual exit per page |
 | `Lib/FsMachine.ahk` | Pure fullscreen state machine: requests confirmed only by page reports |
 | `Lib/LosslessPolicy.ahk` | Pure Lossless Scaling on/off rules |
-| `Lib/LosslessDetect.ahk` | Detects whether Lossless Scaling is currently scaling (its overlay window) |
+| `Lib/LosslessDetect.ahk` | Detects whether Lossless Scaling is currently scaling on a monitor (its overlay window) |
+| `Lib/Screen.ahk` | Pure monitor geometry: which monitor a window is on, overlay coverage, corner positions |
 | `Lib/Media.ahk` | AHK wrapper around Windows' `GlobalSystemMediaTransportControlsSessionManager` |
 | `Lib/WebSocket.ahk`, `Lib/JSON.ahk` | Vendored from [thqby/ahk2_lib](https://github.com/thqby/ahk2_lib) (MIT, `Lib/ahk2_lib-LICENSE.txt`) |
 | `bridge/bridge.js` | The Node WebSocket relay (`bridge/package.json` holds its `ws` dependency) |
 | `Extension/content.js` | Runs in each page — finds the active `<video>`, reports its state, runs fullscreen (F19 nudge)/seek/speed/hold-to-speed, reports clicks on the video |
-| `Extension/lib/pageLogic.js` | Pure page helpers (site matching, watch-page URLs, typing detection), unit-tested |
+| `Extension/lib/pageLogic.js` | Pure page helpers (site matching, watch-page URLs, typing detection, leveler maths), unit-tested |
 | `Extension/background.js` | MV3 service worker — the bridge connection; forwards only the active tab's reports and routes commands to it |
 | `Extension/manifest.json` | Chrome extension manifest (MV3) |
 | `tests/` | AHK test runner + rule-module tests, and the node test for `pageLogic.js` |

@@ -9,6 +9,8 @@
 ;
 ; CLOCK_MARGIN_RIGHT: increase to move the clock further left (e.g. to clear
 ; Douyin's like/comment/share icon column on the right edge in fullscreen).
+; It's placed on the monitor of the Chrome window (StateEngine _ChromeMonitor),
+; where the fullscreen video is.
 CLOCK_W               := 120
 CLOCK_H               := 40
 CLOCK_MARGIN_RIGHT     := 65
@@ -31,11 +33,11 @@ InitClockOverlay() {
     ClockGui.SetFont("s20 cWhite Bold", "Segoe UI")
     ClockTextCtrl := ClockGui.AddText("Center w" . CLOCK_W . " h" . CLOCK_H, FormatTime(, "h:mm"))
 
-    x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
+    pos := Screen.TopRight(_ChromeMonitor(), CLOCK_W, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP)
     ; Show once so WinSetTransColor has a real window to target, then hide —
     ; passing "Hide" inline with x/y/w/h doesn't reliably keep a new Gui
     ; hidden on its first show.
-    ClockGui.Show("NoActivate x" . x . " y" . CLOCK_MARGIN_TOP . " w" . CLOCK_W . " h" . CLOCK_H)
+    ClockGui.Show("NoActivate x" . pos.x . " y" . pos.y . " w" . CLOCK_W . " h" . CLOCK_H)
     WinSetTransColor(CLOCK_TRANSPARENT_KEY, "ahk_id " . ClockGui.Hwnd)
     ClockGui.Hide()
 }
@@ -52,8 +54,8 @@ UpdateClockVisibility() {
     if State.machine.state == "fullscreen" {
         if !_clockShown {
             ClockTextCtrl.Value := FormatTime(, "h:mm")
-            x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
-            ClockGui.Show("NoActivate x" . x . " y" . CLOCK_MARGIN_TOP)
+            pos := Screen.TopRight(_ChromeMonitor(), CLOCK_W, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP)
+            ClockGui.Show("NoActivate x" . pos.x . " y" . pos.y)
             _clockShown := true
         }
     } else if _clockShown {
@@ -99,20 +101,23 @@ ShowTooltip() {
     t .= "Site:       " . (p.site != "" ? p.site : "—") . "`n"
     t .= "Playable:   " . _YesNo(p.playable) . "   Playing: " . _YesNo(p.playing) . "   Ready: " . _YesNo(p.ready) . "`n"
     t .= "Typing:     " . _YesNo(p.editableFocused) . "`n"
+    t .= "Page leveler: " . (p.HasOwnProp("leveled") && p.leveled ? "on" : "off") . "`n"
     t .= "Fullscreen: " . v.fs . "   Manual exit: " . _YesNo(v.manualExit) . "`n"
     t .= "Video keys: " . (v.keysOn ? "ON" : "OFF") . "`n"
     t .= "Gave up:    " . (v.lastGaveUp != "" ? v.lastGaveUp : "never") . "`n"
     t .= "Lossless:   " . (lossless.on ? "on" : "off") . "   pending: " . (lossless.pending != "" ? lossless.pending : "—")
-        . "   detected: " . _YesNo(_LosslessActive()) . "`n"
+        . "   detected: " . _YesNo(_LosslessActive(_ChromeMonitor())) . "`n"
     t .= "`n"
 
     ; ── Volume leveler ────────────────────────────────────────
     t .= "VOLUME LEVELER`n" . LS
     t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
-    levelerActive := p.site != "" && p.playing
-    t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
+    pageLeveled := p.HasOwnProp("leveled") && p.leveled
+    levelerActive := p.site != "" && p.playing && !pageLeveled
+    t .= "Active:  " . (levelerActive ? "yes" : pageLeveled ? "no — the page leveler handles this page" : "no (needs matched site + playing)") . "`n"
     livePeak := _GetBrowserPeak()
     t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
+    t .= (pageLeveled ? "(Smoothed/Multiplier below are idle while the page leveler is on)`n" : "")
     t .= "Smoothed:   " . _RoundTrim(State.volumeSmoothedPeak, 4) . " (target " . _RoundTrim(CONFIG.VOLUME_LEVELER_TARGET, 4) . ")`n"
     t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
     ; the leveler's last _SetBrowserVolume() result — not re-applied from here

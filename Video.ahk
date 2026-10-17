@@ -105,9 +105,16 @@ _HK_HoldSpeed(hk) {
         _SendToChrome("{Right}")
         return
     }
-    BridgeClient_Send({type: "holdSpeed", on: true, rate: CONFIG.HOLD_SPEED})
+    _HoldSpeedOn()
+    SetTimer(_HoldSpeedOn, 500)  ; keep-alive: the page drops 2x on its own if these stop
     KeyWait(key)
+    SetTimer(_HoldSpeedOn, 0)
     BridgeClient_Send({type: "holdSpeed", on: false})
+}
+
+_HoldSpeedOn() {
+    global CONFIG
+    BridgeClient_Send({type: "holdSpeed", on: true, rate: CONFIG.HOLD_SPEED})
 }
 
 _HK_0(*) => BridgeClient_Send({type: "seek", to: 0})

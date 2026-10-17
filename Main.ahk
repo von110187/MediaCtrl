@@ -5,6 +5,7 @@
 #include Lib/FsMachine.ahk
 #include Lib/LosslessPolicy.ahk
 #include Lib/LosslessDetect.ahk
+#include Lib/Screen.ahk
 #include Config.ahk
 #include State.ahk
 #include StateEngine.ahk

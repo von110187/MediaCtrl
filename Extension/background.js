@@ -51,7 +51,7 @@ function connect() {
         } else if (msg.type === "config") {
             // content scripts read sites from storage, so a site change in
             // Config.ahk reaches every tab without re-injecting
-            chrome.storage.local.set({ sites: msg.sites });
+            chrome.storage.local.set({ sites: msg.sites, leveler: msg.leveler || {} });
         } else if (msg.type === "refresh") {
             // AHK saw a different Chrome window take focus — don't rely on
             // windows.onFocusChanged alone, it doesn't always fire

@@ -61,6 +61,27 @@ global CONFIG := {
     HOLD_TAP_MS:        300,    ; released sooner than this: a tap, sent as one Right
     CLICK_EXIT_WAIT_MS: 500,    ; b / video click: exit after the site's pause, at most this long
 
+    ; ── Page leveler (AGC) ───────────────────────────────────────────────────
+    ; Runs in the page (Extension/content.js): each video's loudness is
+    ; measured and its gain moved toward targetDb, so every video plays at
+    ; about the same level — quiet ones up, loud ones down — with a limiter
+    ; catching peaks. Sent to the extension with the sites. Where it can't
+    ; attach (a source Web Audio can't hear), the WASAPI leveler below runs.
+    ;   targetDb   — loudness every video is brought to (RMS dBFS; higher = louder)
+    ;   maxBoostDb / maxCutDb — how far a video may be turned up / down
+    ;   smoothingS — seconds of sound averaged (higher = slower, steadier)
+    ;   silenceDb  — quieter than this is a gap: the gain is held
+    ;   limiterDb  — peaks above this are squashed
+    PAGE_LEVELER: {
+        enabled:    true,
+        targetDb:   -20,
+        maxBoostDb: 18,
+        maxCutDb:   18,
+        smoothingS: 3,
+        silenceDb:  -50,
+        limiterDb:  -3,
+    },
+
     ; Game process names (without .exe)
     GAME_LIST: ["ZenlessZoneZero"],
 }

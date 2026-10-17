@@ -18,6 +18,7 @@ global State := {
     pendingExit:  false,     ; b / video click while playing: exit once paused
     lastGaveUp:   "",        ; time of the last unconfirmed fullscreen request
     foregroundHwnd: 0,       ; last foreground window seen by the shell hook / tick
+    chromeHwnd:     0,       ; last Chrome window that was foreground (its monitor)
 
     videoHotkeys: false,  ; gate for b w a s d right 0 1 2 3 4 5 e q esc f1 f2 f3
 

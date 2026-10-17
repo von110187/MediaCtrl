@@ -126,6 +126,7 @@ _CheckForeground() {
     State.foregroundHwnd := hwnd
     _UpdateProgramState()
     if _ChromeFocused() {
+        State.chromeHwnd := hwnd
         BridgeClient_Send({type: "refresh"})
         _LosslessDetect()
         _LosslessApply(LosslessPolicy.OnChromeForeground(State.lossless))
@@ -137,6 +138,23 @@ _CheckForeground() {
 _ChromeFocused() {
     try return WinGetProcessName("A") = "chrome.exe"
     return false
+}
+
+; The monitor ({l, t, r, b}) the last foreground Chrome window is on — where
+; its fullscreen video, the clock and the speed label are. Primary if unknown.
+_ChromeMonitor() {
+    global State
+    monitors := []
+    Loop MonitorGetCount() {
+        MonitorGet(A_Index, &l, &t, &r, &b)
+        monitors.Push({l: l, t: t, r: r, b: b})
+    }
+    index := MonitorGetPrimary()
+    try {
+        WinGetPos(&x, &y, &w, &h, "ahk_id " . State.chromeHwnd)
+        index := Screen.MonitorOf({x: x, y: y, w: w, h: h}, monitors)
+    }
+    return monitors[index]
 }
 
 ; every key we send lands in Chrome or nowhere
@@ -225,7 +243,7 @@ _NotifyFullscreen(adopted := false) {
 _LosslessDetect() {
     global State
     if A_TickCount - State.losslessSentAt > 1500
-        LosslessPolicy.SetDetected(State.lossless, _LosslessActive())
+        LosslessPolicy.SetDetected(State.lossless, _LosslessActive(_ChromeMonitor()))
 }
 
 _LosslessApply(action) {
@@ -307,7 +325,7 @@ OnBridgeMessage(msg) {
             return
         case "extConnected":
             ; (re)connected to the bridge, or the extension came or went
-            BridgeClient_Send({type: "config", sites: CONFIG.SITES})
+            BridgeClient_Send({type: "config", sites: CONFIG.SITES, leveler: CONFIG.PAGE_LEVELER})
             _BridgeLogAdd(msg.type, msg.connected ? "yes" : "no")
             VideoEvaluate(false)
         case "state":
