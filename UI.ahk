@@ -84,40 +84,53 @@ ShowTooltip() {
     LS := "────────────────────────`n"
     t  := ""
 
-    ; ── Program / URL ────────────────────────────────────────
+    ; ── Program ──────────────────────────────────────────────
     t .= "PROGRAM`n" . LS
     t .= "Program:  " . (State.currentProgram ? State.currentProgram : "—") . "`n"
-    t .= "URL:      " . (State.page ? SubStr(State.page.url, 1, 60) : "—") . "`n"
-    t .= "Site:     " . (State.page && State.page.site ? State.page.site : "—") . "`n"
     t .= "`n"
 
-    ; ── browser ───────────────────────────────────────────────
-    t .= StrUpper(CONFIG.BROWSER) . "`n" . LS
-    t .= "Playing:    " . (State.page && State.page.playing ? "▶ yes" : "⏸ no") . "`n"
-    t .= "Fullscreen: " . State.machine.state . "`n"
+    ; ── Video (page-tracked, as reported by the extension) ────
+    v := VideoStatus()
+    p := v.page ? v.page : {url: "", site: "", playable: false, playing: false, ready: false, editableFocused: false}
+    lossless := v.lossless
+    t .= "VIDEO`n" . LS
+    t .= "Connected:  " . _YesNo(v.connected) . "    Monitor: " . (v.monitorOn ? "On" : "Off") . "`n"
+    t .= "URL:        " . (p.url != "" ? SubStr(p.url, 1, 60) : "—") . "`n"
+    t .= "Site:       " . (p.site != "" ? p.site : "—") . "`n"
+    t .= "Playable:   " . _YesNo(p.playable) . "   Playing: " . _YesNo(p.playing) . "   Ready: " . _YesNo(p.ready) . "`n"
+    t .= "Typing:     " . _YesNo(p.editableFocused) . "`n"
+    t .= "Fullscreen: " . v.fs . "   Manual exit: " . _YesNo(v.manualExit) . "`n"
+    t .= "Video keys: " . (v.keysOn ? "ON" : "OFF") . "`n"
+    t .= "Gave up:    " . (v.lastGaveUp != "" ? v.lastGaveUp : "never") . "`n"
+    t .= "Lossless:   " . (lossless.on ? "on" : "off") . "   pending: " . (lossless.pending != "" ? lossless.pending : "—")
+        . "   detected: " . _YesNo(_LosslessActive()) . "`n"
     t .= "`n"
 
     ; ── Volume leveler ────────────────────────────────────────
     t .= "VOLUME LEVELER`n" . LS
     t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
-    levelerActive := State.page && State.page.site && State.page.playing
+    levelerActive := p.site != "" && p.playing
     t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
     livePeak := _GetBrowserPeak()
     t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
     t .= "Smoothed:   " . _RoundTrim(State.volumeSmoothedPeak, 4) . " (target " . _RoundTrim(CONFIG.VOLUME_LEVELER_TARGET, 4) . ")`n"
     t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
-    ; fresh diagnostic every refresh (re-applies current multiplier, harmless)
-    ; rather than showing stale volumeDebug
-    dbg := _SetBrowserVolume(State.volumeMultiplier)
-    t .= "Sessions:   " . dbg.total . " total, " . dbg.browserSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
-    if dbg.error != ""
-        t .= "Error:      " . dbg.error . "`n"
+    ; the leveler's last _SetBrowserVolume() result — not re-applied from here
+    dbg := State.volumeDebug
+    if IsObject(dbg) {
+        t .= "Last set:   " . dbg.total . " total, " . dbg.browserSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
+        if dbg.error != ""
+            t .= "Error:      " . dbg.error . "`n"
+    }
     t .= "`n"
 
-    ; ── Video hotkeys ────────────────────────────────────────
-    t .= "VIDEO HOTKEYS`n" . LS
-    t .= "Enabled:  " . (State.videoHotkeys ? "ON" : "OFF") . "`n"
-    t .= "Monitor:  " . (State.monitorVideo ? "On" : "Off") . "`n"
+    ; ── Bridge messages ──────────────────────────────────────
+    t .= "BRIDGE (last 15)`n" . LS
+    first := Max(1, State.bridgeLog.Length - 14)
+    Loop State.bridgeLog.Length - first + 1
+        t .= "  " . State.bridgeLog[first + A_Index - 1] . "`n"
+    if !State.bridgeLog.Length
+        t .= "  (none yet)`n"
     t .= "`n"
 
     ; ── Speaker / Bass ───────────────────────────────────────
@@ -154,7 +167,7 @@ ShowTooltip() {
             peak := _GetSongPeak()
             t .= "Peak:      " . (peak >= 0 ? Round(peak, 4) : "n/a (session not found)") . "`n"
     t .= "`nWASAPI SESSIONS`n" . LS
-    t .= _GetWasapiSessionsDebug()
+    t .= _WasapiSessionsCached()
         }
     } catch {
     }
@@ -162,6 +175,19 @@ ShowTooltip() {
     MouseGetPos(&xpos, &ypos)
     ToolTip(t, xpos + 14, ypos + 14)
 }
+
+; The session list walks every WASAPI session, so it's refreshed at most every
+; 2 s, and only while the tooltip is shown (this is only called from it).
+_WasapiSessionsCached() {
+    static text := "", at := 0
+    if !at || A_TickCount - at >= 2000 {
+        text := _GetWasapiSessionsDebug()
+        at := A_TickCount
+    }
+    return text
+}
+
+_YesNo(v) => v ? "yes" : "no"
 
 ; Round to N decimals, string-only trim of trailing zeros (no math after
 ; Round(), or float noise like 0.34999999999999998 reappears).
