@@ -1,22 +1,17 @@
 {
     "manifest_version": 3,
-    "name": "MediaCtrl Bridge",
-    "version": "1.0",
-    "permissions": ["tabs", "activeTab", "scripting", "alarms"],
-    "host_permissions": [
-        "http://127.0.0.1/*",
-        "ws://127.0.0.1/*",
-        "<all_urls>"
-    ],
-    "background": {
-        "service_worker": "background.js"
-    },
+    "name": "MediaCtrl",
+    "version": "2.0",
+    "description": "Reports video page state to MediaCtrl (AutoHotkey) and runs its fullscreen/seek/speed commands.",
+    "permissions": ["tabs", "alarms", "storage"],
+    "host_permissions": ["<all_urls>"],
+    "background": { "service_worker": "background.js" },
     "content_scripts": [
         {
             "matches": ["*://*/*"],
-            "js": ["content.js"],
+            "js": ["lib/pageLogic.js", "content.js"],
             "run_at": "document_idle",
-            "all_frames": true
+            "all_frames": false
         }
     ]
 }
