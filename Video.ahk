@@ -19,22 +19,6 @@ MonitorGame() {
     }
 }
 
-; ============ MONITOR LM STUDIO ============
-; Kills LosslessScaling when LM Studio is running (GPU conflict).
-
-MonitorLMStudio() {
-    if ProcessExist("LM Studio.exe") {
-        if ProcessExist("LosslessScaling.exe")
-            ProcessClose("LosslessScaling.exe")
-        return
-    }
-    if !ProcessExist("LosslessScaling.exe") {
-        Run('"C:\Program Files (x86)\Steam\steamapps\common\Lossless Scaling\LosslessScaling.exe"')
-        WinWait("ahk_exe LosslessScaling.exe")
-        WinClose("ahk_exe LosslessScaling.exe")
-    }
-}
-
 ; ============ VIDEO HOTKEYS — dynamic registration ============
 ; All video keys default OFF. _SetVideoHotkeys() turns them on/off together,
 ; as Lib/Decide.ahk says (StateEngine.ahk VideoEvaluate). Keys that reach the
