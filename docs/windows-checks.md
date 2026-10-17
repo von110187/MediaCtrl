@@ -64,3 +64,33 @@ that sent the planned `SITES` as `config` and a `probe` every 5 s.
 Also seen: the YouTube home and channel pages report `playable=0`; leaving a
 tab for the next reports `editableFocused=1` (the page lost focus) and then
 the new tab's state; `chrome://extensions` reports the "nothing here" state.
+
+## 5. Page-tracked fullscreen, Lossless and video keys (Task 7) — 2026-10-17: PASS
+
+The new `Main.ahk` (run as before), the new extension in one profile.
+
+| Check | Result |
+|---|---|
+| YouTube: play → fullscreen, no stray `f`, Lossless on; Esc → out, Lossless off, stays out while playing | ✓ |
+| Alt+Tab away and back → still out; pause, then play → re-enters | ✓ |
+| Double-click exit → stays out; F5 → reload, re-enters when the video plays | ✓ |
+| `wasd` typed into the YouTube search box and the address bar (Ctrl+L) | ✓ letters appear |
+| Single click on the video in fullscreen → pauses, then exits | ✓ |
+| Bilibili: hold `d` seeks; `wasd` in the comment box | ✓ |
+| Douyin: fullscreen shows danmaku; scrolling the feed → no false exits | ✓ |
+| AHK reload mid-fullscreen → no Lossless flip, keys back within ~3 s | ✓ |
+| Ctrl+W on a fullscreen tab → Lossless off, next video not blocked (design check 4) | ✓ |
+
+**Design check 4 (Ctrl+W):** closing the tab makes Chrome activate another
+tab, the extension reports it (new `pageId`, not fullscreen), and that counts
+as a page change, not a manual exit. The `tabs.onRemoved` fallback the design
+describes isn't needed.
+
+**Lossless manual presses — changed after trying it.** The design's rule (a
+manual F1/F2/F3 during a fullscreen video hands that video to the user, so it
+stays off until pressed again) wasn't wanted: "when lossless scaling is off,
+no need to keep it as off until i manually press it back, i think normal
+behaviour is good enough". Now scaling follows fullscreen every time (also
+when the same video re-enters), and a manual press only flips the tracked
+state. Re-checked: F1 off → Esc (stays off) → Esc re-enters with Lossless on ✓.
+Review Focus 5 no longer applies.
