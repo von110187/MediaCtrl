@@ -15,7 +15,7 @@ InitSpeaker() {
 
     State.activeSpeaker := speakerName
 
-    if InStr(speakerName, "Harman Kardon") {
+    if _IsHarmanSpeaker() {
         ; Default bass OFF
         ; Peace EQ should be running already — launch if not
         if !ProcessExist("Peace.exe") {
@@ -27,4 +27,11 @@ InitSpeaker() {
     } else if InStr(speakerName, "Adam D3V") {
         ; timer set in Main.ahk after InitSpeaker()
     }
+}
+
+; Windows reports longer names like "Speakers (Harman Kardon Aura)", so this
+; is a substring match — the one rule every Harman check uses.
+_IsHarmanSpeaker() {
+    global State
+    return InStr(State.activeSpeaker, "Harman Kardon") > 0
 }

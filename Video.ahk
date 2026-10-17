@@ -14,7 +14,7 @@ MonitorGame() {
         State.gameRunning[game] := isRunning
 
         ; Update bass on game open/close
-        if (State.activeSpeaker = "Harman Kardon")
+        if _IsHarmanSpeaker()
             _UpdateHarmanBass()
     }
 }
