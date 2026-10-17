@@ -48,3 +48,19 @@ thqby `WebSocket.ahk` in async mode, against `bridge/bridge.js`:
 
 The busy handler is interrupted by hotkeys and timers, so messages are
 dispatched to `OnBridgeMessage` directly; no `SetTimer` wrap is needed.
+
+## 4. Ported extension reports and selectors (Task 6) — 2026-10-17: PASS
+
+The new unpacked `Extension/` in one Chrome profile, the old extension and
+old MediaCtrl removed, `bridge/bridge.js` on 9224, and a listening AHK client
+that sent the planned `SITES` as `config` and a `probe` every 5 s.
+
+| Site | `state` while playing | `probeResult.hits` |
+|---|---|---|
+| YouTube `/watch` | `playable=1 playing=1 ready=1` | `fsButton` ✓ `playerSelector` ✓ (2 videos) |
+| Bilibili `/video/` | `playable=1 playing=1 ready=1` | `fsButton` ✓ `playerSelector` ✓ (1 video) |
+| Douyin feed | `playable=1 playing=1 ready=1` | `fsButton` ✓ (no `playerSelector` configured; 3 videos) |
+
+Also seen: the YouTube home and channel pages report `playable=0`; leaving a
+tab for the next reports `editableFocused=1` (the page lost focus) and then
+the new tab's state; `chrome://extensions` reports the "nothing here" state.
