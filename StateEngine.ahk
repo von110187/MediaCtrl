@@ -37,7 +37,7 @@ _OnProgramChanged() {
     global State, CONFIG
 
     ; Harman Kardon: game open + focused → bass on; else off
-    if (State.activeSpeaker = "Harman Kardon")
+    if _IsHarmanSpeaker()
         _UpdateHarmanBass()
 
     VideoEvaluate(false)
