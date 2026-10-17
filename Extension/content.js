@@ -226,6 +226,14 @@
 
     // ── Commands from AHK ───────────────────────────────────────────────────
 
+    let holdSpeed = null;  // { video, rate } while d / Right is held
+
+    function setRate(video, rate) {
+        video.playbackRate = rate;
+        // some players reset playbackRate asynchronously
+        setTimeout(() => { video.playbackRate = rate; }, 100);
+    }
+
     chrome.runtime.onMessage.addListener((msg) => {
         const video = getActiveVideo(currentSite());
         if (msg.type === "reportNow") {
@@ -245,9 +253,18 @@
             seekGraceUntil = performance.now() + SEEK_GRACE_MS;
             setTimeout(() => report(false), SEEK_GRACE_MS + 50);
         } else if (msg.type === "speed" && video && typeof msg.rate === "number") {
-            video.playbackRate = msg.rate;
-            // some players reset playbackRate asynchronously
-            setTimeout(() => { video.playbackRate = msg.rate; }, 100);
+            holdSpeed = null;  // an explicit speed wins over a hold in progress
+            setRate(video, msg.rate);
+        } else if (msg.type === "holdSpeed") {
+            // d / Right held in AHK: fast while held, then back to the rate
+            // (and the video) it was before, even if the feed moved on
+            if (msg.on && video && !holdSpeed && typeof msg.rate === "number") {
+                holdSpeed = { video, rate: video.playbackRate };
+                setRate(video, msg.rate);
+            } else if (!msg.on && holdSpeed) {
+                setRate(holdSpeed.video, holdSpeed.rate);
+                holdSpeed = null;
+            }
         } else if (msg.type === "probe") {
             probe();
         }

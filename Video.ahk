@@ -45,7 +45,8 @@ VIDEO_KEYS := Map(
     "$w",   _HK_w,     ; w a s d — arrow keys
     "$a",   _HK_a,
     "$s",   _HK_s,
-    "$d",   _HK_d,     ; hold to seek on holdSeek sites
+    "$d",   _HK_HoldSpeed,  ; d / Right — tap: Right; hold: CONFIG.HOLD_SPEED
+    "$Right", _HK_HoldSpeed,
     "$0",   _HK_0,     ; restart from the beginning
     "$1",   _HK_Speed, ; 1 2 3 4 — playback speed (CONFIG.SPEEDS)
     "$2",   _HK_Speed,
@@ -92,17 +93,20 @@ _HK_w(*) => _SendToChrome("{Up}")
 _HK_a(*) => _SendToChrome("{Left}")
 _HK_s(*) => _SendToChrome("{Down}")
 
-; d: hold Right while held on holdSeek sites (Bilibili/Douyin seek). The
-; release is always sent, so the OS never keeps a synthetic Right held down.
-_HK_d(*) {
-    site := _CurrentSite()
-    if site && site.holdSeek && _ChromeFocused() {
-        Send("{Right down}")
-        KeyWait("d")
-        Send("{Right up}")
-    } else {
+; d / Right: a tap sends one Right (the site's own seek); held, the video
+; plays at CONFIG.HOLD_SPEED until released, on every site (YouTube has no
+; hold-to-speed of its own). The extension sets the rate and restores the
+; previous one; auto-repeat is swallowed while the key is held.
+_HK_HoldSpeed(hk) {
+    global CONFIG
+    key := SubStr(hk, 2)
+    if KeyWait(key, "T" . CONFIG.HOLD_TAP_MS / 1000) {
         _SendToChrome("{Right}")
+        return
     }
+    BridgeClient_Send({type: "holdSpeed", on: true, rate: CONFIG.HOLD_SPEED})
+    KeyWait(key)
+    BridgeClient_Send({type: "holdSpeed", on: false})
 }
 
 _HK_0(*) => BridgeClient_Send({type: "seek", to: 0})

@@ -39,7 +39,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - Video keys turn off while a text field has focus — including fields inside shadow roots (Bilibili comments) and iframes (YouTube live chat) — and while Chrome's own UI has focus (address bar, find bar, dialogs).
 
 **Video mode keys** (only while watching a video on a matched site in Chrome)
-- `w a s d` → arrow keys; on Bilibili/Douyin, holding `d` holds Right to seek.
+- `w a s d` → arrow keys. A tap of `d` or Right seeks as usual; **holding** `d` or Right plays the video at 2× until you let go, on every site (YouTube included).
 - `e` / `q` skip ±87 s, `0` restarts, `1 2 3 4` set speed 1×/1.5×/2×/3×.
 - `Esc` toggles fullscreen; `b` pauses and exits (or enters when not fullscreen).
 - `F1 F2 F3` → Lossless Scaling hotkey passthrough.
@@ -110,9 +110,10 @@ All user-specific values live in `Config.ahk`:
 |---|---|
 | `SONG` / `BROWSER` | Process name fragments used to match SMTC/WASAPI sessions (e.g. `spotify`, `chrome`) |
 | `SONG_EXE` | Native Spotify executable name, used to activate/launch it when no SMTC session exists yet (e.g. `Spotify.exe`) |
-| `SITES` | Per-site settings, sent to the extension: domain, the site's fullscreen button, the player container, the fallback fullscreen key, hold-to-seek |
+| `SITES` | Per-site settings, sent to the extension: domain, the site's fullscreen button, the player container, the fallback fullscreen key |
 | `TICK_MS` | Video evaluation timer (ms) |
 | `SEEK_SECONDS` / `SPEEDS` | `e`/`q` jump size, and the `1 2 3 4` playback speeds |
+| `HOLD_SPEED` / `HOLD_TAP_MS` | Rate while `d`/Right is held, and how short a press counts as a tap |
 | `CLICK_EXIT_WAIT_MS` | How long `b`/a video click waits for the site's pause before exiting anyway |
 | `GAME_LIST` | Process names that trigger bass-on behavior when focused |
 | `TIMER_ACTIVE` / `TIMER_IDLE` | Main tick interval (ms) while media is/isn't active |
@@ -156,7 +157,7 @@ If you're adapting this for your own use, start with `Config.ahk` and `Hotkeys.a
 | `Lib/Media.ahk` | AHK wrapper around Windows' `GlobalSystemMediaTransportControlsSessionManager` |
 | `Lib/WebSocket.ahk`, `Lib/JSON.ahk` | Vendored from [thqby/ahk2_lib](https://github.com/thqby/ahk2_lib) (MIT, `Lib/ahk2_lib-LICENSE.txt`) |
 | `bridge/bridge.js` | The Node WebSocket relay (`bridge/package.json` holds its `ws` dependency) |
-| `Extension/content.js` | Runs in each page — finds the active `<video>`, reports its state, runs fullscreen (F19 nudge)/seek/speed, reports clicks on the video |
+| `Extension/content.js` | Runs in each page — finds the active `<video>`, reports its state, runs fullscreen (F19 nudge)/seek/speed/hold-to-speed, reports clicks on the video |
 | `Extension/lib/pageLogic.js` | Pure page helpers (site matching, watch-page URLs, typing detection), unit-tested |
 | `Extension/background.js` | MV3 service worker — the bridge connection; forwards only the active tab's reports and routes commands to it |
 | `Extension/manifest.json` | Chrome extension manifest (MV3) |

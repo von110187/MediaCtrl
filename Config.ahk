@@ -43,21 +43,22 @@ global CONFIG := {
     ; match — domain (and its subdomains); fsButton — the site's own fullscreen
     ; button, clicked during the F19 nudge; playerSelector — the real player
     ; container (requestFullscreen fallback, and how hover previews are told
-    ; apart from the real video); fsKey — last-resort key; holdSeek — hold d to
-    ; hold Right (Bilibili/Douyin style seeking)
+    ; apart from the real video); fsKey — last-resort key
     ; Douyin: no playerSelector — its feed mounts several players, so the
     ; active video is found by which one is actually playing. Its other button,
     ; .xgplayer-page-full-screen, is window-only "web fullscreen" that the
     ; browser doesn't report, so it isn't used.
     SITES: {
-        youtube:  { match: "youtube.com",  fsButton: ".ytp-fullscreen-button", playerSelector: "#movie_player",         fsKey: "f", holdSeek: false },
-        bilibili: { match: "bilibili.com", fsButton: ".bpx-player-ctrl-full",  playerSelector: ".bpx-player-container", fsKey: "f", holdSeek: true },
-        douyin:   { match: "douyin.com",   fsButton: ".xgplayer-fullscreen",   playerSelector: "",                      fsKey: "h", holdSeek: true },
+        youtube:  { match: "youtube.com",  fsButton: ".ytp-fullscreen-button", playerSelector: "#movie_player",         fsKey: "f" },
+        bilibili: { match: "bilibili.com", fsButton: ".bpx-player-ctrl-full",  playerSelector: ".bpx-player-container", fsKey: "f" },
+        douyin:   { match: "douyin.com",   fsButton: ".xgplayer-fullscreen",   playerSelector: "",                      fsKey: "h" },
     },
 
     TICK_MS:            250,    ; video evaluation timer
     SEEK_SECONDS:       87,     ; e / q jump size
     SPEEDS:             [1.0, 1.5, 2.0, 3.0],  ; keys 1 2 3 4
+    HOLD_SPEED:         2.0,    ; d / Right held: play at this rate until released
+    HOLD_TAP_MS:        300,    ; released sooner than this: a tap, sent as one Right
     CLICK_EXIT_WAIT_MS: 500,    ; b / video click: exit after the site's pause, at most this long
 
     ; Game process names (without .exe)

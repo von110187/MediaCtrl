@@ -118,3 +118,9 @@ with the tooltip on.
 The default output reports as `Harman Kardon (High Definition Audio Device)`,
 so the old exact-match check never matched. With `_IsHarmanSpeaker()`:
 focusing Zenless Zone Zero → `Bass: ON`; Alt+Tab away → `Bass: OFF`.
+
+## 9. Hold d / Right for 2× (follow-up) — 2026-10-17: PASS
+
+Replaces Bilibili/Douyin-only "hold d = hold Right". On YouTube, Bilibili and
+Douyin: a tap of `d` or Right seeks as before; holding either plays at 2×
+(set by the extension) and returns to the previous speed on release ✓.
