@@ -69,7 +69,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 **Hotkeys & system glue**
 - Media key remaps (play/pause, skip, a forced shutdown bound to one of the keys — careful with that one).
 - Volume and brightness key forwarding (PgUp/PgDn, Home/End → a brightness tool).
-- `F6` toggles a live on-screen debug tooltip: program, page-tracked video state (connected, site, playable/playing/ready, typing, fullscreen, manual exit, video keys, Lossless), the last 15 bridge messages, the volume leveler, speaker/bass, and Spotify timeline/WASAPI session info.
+- `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, which leveler is handling the volume, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player, volume errors) show only when they happen.
 - `F9`/`F10` manually force the bass EQ off/on.
 - A watchdog that closes Lossless Scaling when a GPU-heavy app (LM Studio) is running.
 

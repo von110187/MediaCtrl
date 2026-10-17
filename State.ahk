@@ -44,5 +44,5 @@ global State := {
 
     startupTime: A_TickCount,
 
-    bridgeLog: [],  ; recent bridge messages, newest last — for the F6 tooltip
+    bridgeLog: [],  ; recent bridge messages, newest last — for debugging (tray → View → Variables)
 }

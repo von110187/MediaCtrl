@@ -74,7 +74,8 @@ UpdateClockOverlay() {
 }
 
 ; ============ TOOLTIP ============
-; Debug-relevant state only. Early exit when tooltip is off.
+; F6: one line per thing worth checking; problems (gave up, waiting for the
+; player, volume errors) only appear when they happen. Early exit when off.
 
 ShowTooltip() {
     global State, CONFIG
@@ -83,116 +84,62 @@ ShowTooltip() {
         return
     }
 
-    LS := "────────────────────────`n"
-    t  := ""
-
-    ; ── Program ──────────────────────────────────────────────
-    t .= "PROGRAM`n" . LS
-    t .= "Program:  " . (State.currentProgram ? State.currentProgram : "—") . "`n"
-    t .= "`n"
-
-    ; ── Video (page-tracked, as reported by the extension) ────
     v := VideoStatus()
-    p := v.page ? v.page : {url: "", site: "", playable: false, playing: false, ready: false, editableFocused: false}
-    lossless := v.lossless
-    t .= "VIDEO`n" . LS
-    t .= "Connected:  " . _YesNo(v.connected) . "    Monitor: " . (v.monitorOn ? "On" : "Off") . "`n"
-    t .= "URL:        " . (p.url != "" ? SubStr(p.url, 1, 60) : "—") . "`n"
-    t .= "Site:       " . (p.site != "" ? p.site : "—") . "`n"
-    t .= "Playable:   " . _YesNo(p.playable) . "   Playing: " . _YesNo(p.playing) . "   Ready: " . _YesNo(p.ready) . "`n"
-    t .= "Typing:     " . _YesNo(p.editableFocused) . "`n"
-    t .= "Page leveler: " . (p.HasOwnProp("leveled") && p.leveled ? "on" : "off") . "`n"
-    t .= "Fullscreen: " . v.fs . "   Manual exit: " . _YesNo(v.manualExit) . "`n"
-    t .= "Video keys: " . (v.keysOn ? "ON" : "OFF") . "`n"
-    t .= "Gave up:    " . (v.lastGaveUp != "" ? v.lastGaveUp : "never") . "`n"
-    t .= "Lossless:   " . (lossless.on ? "on" : "off") . "   pending: " . (lossless.pending != "" ? lossless.pending : "—")
-        . "   detected: " . _YesNo(_LosslessActive(_ChromeMonitor())) . "`n"
-    t .= "`n"
-
-    ; ── Volume leveler ────────────────────────────────────────
-    t .= "VOLUME LEVELER`n" . LS
-    t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
+    p := v.page ? v.page : {site: "", playing: false, ready: false, editableFocused: false}
     pageLeveled := p.HasOwnProp("leveled") && p.leveled
-    levelerActive := p.site != "" && p.playing && !pageLeveled
-    t .= "Active:  " . (levelerActive ? "yes" : pageLeveled ? "no — the page leveler handles this page" : "no (needs matched site + playing)") . "`n"
-    livePeak := _GetBrowserPeak()
-    t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
-    t .= (pageLeveled ? "(Smoothed/Multiplier below are idle while the page leveler is on)`n" : "")
-    t .= "Smoothed:   " . _RoundTrim(State.volumeSmoothedPeak, 4) . " (target " . _RoundTrim(CONFIG.VOLUME_LEVELER_TARGET, 4) . ")`n"
-    t .= "Multiplier: " . Round(State.volumeMultiplier, 3) . "x`n"
-    ; the leveler's last _SetBrowserVolume() result — not re-applied from here
-    dbg := State.volumeDebug
-    if IsObject(dbg) {
-        t .= "Last set:   " . dbg.total . " total, " . dbg.browserSessions . " " . CONFIG.BROWSER . ", " . dbg.volumeSet . " volume-set OK`n"
-        if dbg.error != ""
-            t .= "Error:      " . dbg.error . "`n"
-    }
-    t .= "`n"
+    t := ""
 
-    ; ── Bridge messages ──────────────────────────────────────
-    t .= "BRIDGE (last 15)`n" . LS
-    first := Max(1, State.bridgeLog.Length - 14)
-    Loop State.bridgeLog.Length - first + 1
-        t .= "  " . State.bridgeLog[first + A_Index - 1] . "`n"
-    if !State.bridgeLog.Length
-        t .= "  (none yet)`n"
-    t .= "`n"
+    ; ── Video ────────────────────────────────────────────────
+    if !v.connected
+        t .= "Video:     extension not connected`n"
+    else if p.site = ""
+        t .= "Video:     no video site`n"
+    else
+        t .= "Video:     " . p.site . "  " . (p.playing ? "▶ playing" : "⏸ paused") . "  ·  " . v.fs . "`n"
+    t .= "Keys:      " . (v.keysOn ? "ON" : "off") . (p.editableFocused ? " (typing)" : "")
+        . (v.manualExit ? "  ·  manual exit" : "") . (v.monitorOn ? "" : "  ·  monitor OFF (F7)") . "`n"
+    if p.playing && !p.ready && v.fs == "normal"
+        t .= "           waiting for the player`n"
+    if v.lastGaveUp != ""
+        t .= "           fullscreen gave up at " . v.lastGaveUp . "`n"
+    t .= "Lossless:  " . (_LosslessActive(_ChromeMonitor()) ? "on" : "off")
+        . (v.lossless.pending != "" ? "  ·  " . v.lossless.pending . " when Chrome is back" : "") . "`n"
 
-    ; ── Speaker / Bass ───────────────────────────────────────
-    t .= "SPEAKER`n" . LS
-    t .= "Speaker: " . (State.activeSpeaker ? State.activeSpeaker : "—") . "`n"
-    t .= "Bass:    " . (State.bassOn ? "ON" : "OFF") . "`n"
-    t .= "`n"
+    ; ── Sound ────────────────────────────────────────────────
+    if pageLeveled
+        t .= "Volume:    page leveler`n"
+    else
+        t .= "Volume:    " . _RoundTrim(State.volumeMultiplier, 2) . "×" . (CONFIG.VOLUME_LEVELER_ENABLED ? "" : " (leveler off)") . "`n"
+    if IsObject(State.volumeDebug) && State.volumeDebug.error != ""
+        t .= "           volume error: " . State.volumeDebug.error . "`n"
+    t .= "Speaker:   " . (State.activeSpeaker ? State.activeSpeaker : "—") . "  ·  bass " . (State.bassOn ? "ON" : "off") . "`n"
+    t .= "Spotify:   " . _SpotifyLine() . "`n"
 
-    ; ── Spotify ───────────────────────────────────────────────
-    t .= StrUpper(CONFIG.SONG) . "`n" . LS
-    t .= "Playing: " . (State.songIsPlaying ? "▶ yes" : "⏸ no") . "`n"
+    MouseGetPos(&xpos, &ypos)
+    ToolTip(RTrim(t, "`n"), xpos + 14, ypos + 14)
+}
+
+; "▶ 42s left" (with "· skip zone" in the outro window), "⏸ paused", or "—"
+_SpotifyLine() {
+    global State, CONFIG
     try {
         for session in State.sessions {
             if !InStr(session.SourceAppUserModelId, CONFIG.SONG)
                 continue
+            if session.PlaybackStatus != 4
+                return "⏸ paused"
             session.UpdateTimelineProperties()
-            dur    := session.EndTime
-            pos    := session.Position
-            lastUp := session.LastUpdatedTime
-
-            if session.PlaybackStatus = 4 {
-                currentFiletime := 0
-                DllCall("GetSystemTimeAsFileTime", "int64*", &currentFiletime)
-                unixNow   := (currentFiletime - 116444736000000000) // 10000000
-                lastUpUnix := lastUp - 11644473600  ; convert Windows epoch → Unix epoch
-                elapsed   := unixNow - lastUpUnix
-                livePos   := (elapsed >= 0 && elapsed <= 600) ? pos + elapsed : pos
-            } else {
-                livePos := pos
-            }
-            remaining := Round(dur) - Round(livePos)
-            t .= "Remaining: " . remaining . "s" . (remaining <= 10 ? " ← SKIP ZONE" : "") . "`n"
-            t .= "Status:    " . session.PlaybackStatus . " (4=playing 5=changing)`n"
-            peak := _GetSongPeak()
-            t .= "Peak:      " . (peak >= 0 ? Round(peak, 4) : "n/a (session not found)") . "`n"
-    t .= "`nWASAPI SESSIONS`n" . LS
-    t .= _WasapiSessionsCached()
+            currentFiletime := 0
+            DllCall("GetSystemTimeAsFileTime", "int64*", &currentFiletime)
+            unixNow := (currentFiletime - 116444736000000000) // 10000000
+            elapsed := unixNow - (session.LastUpdatedTime - 11644473600)  ; Windows epoch → Unix epoch
+            livePos := (elapsed >= 0 && elapsed <= 600) ? session.Position + elapsed : session.Position
+            remaining := Round(session.EndTime) - Round(livePos)
+            return "▶ " . remaining . "s left" . (remaining <= 10 ? "  ·  skip zone" : "")
         }
-    } catch {
     }
-
-    MouseGetPos(&xpos, &ypos)
-    ToolTip(t, xpos + 14, ypos + 14)
+    return "—"
 }
-
-; The session list walks every WASAPI session, so it's refreshed at most every
-; 2 s, and only while the tooltip is shown (this is only called from it).
-_WasapiSessionsCached() {
-    static text := "", at := 0
-    if !at || A_TickCount - at >= 2000 {
-        text := _GetWasapiSessionsDebug()
-        at := A_TickCount
-    }
-    return text
-}
-
-_YesNo(v) => v ? "yes" : "no"
 
 ; Round to N decimals, string-only trim of trailing zeros (no math after
 ; Round(), or float noise like 0.34999999999999998 reappears).
