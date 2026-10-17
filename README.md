@@ -1,10 +1,99 @@
 # MediaCtrl
 
-A personal Windows automation layer, written in **AutoHotkey v2**, that watches what's playing on the PC (Spotify, browser video, games) and reacts automatically — auto-fullscreen on video sites, Lossless Scaling that follows fullscreen, silent-outro skipping for Spotify, speaker bass EQ toggling, and a set of media/utility hotkeys.
+A personal Windows automation layer, written in **AutoHotkey v2** with a small Chrome extension. It watches what's playing and reacts:
 
-The Spotify integration targets the native Spotify desktop app (not the web player/PWA).
+- **Video** on YouTube, Bilibili and Douyin goes fullscreen by itself, gets keyboard controls, and plays at an even loudness from video to video.
+- **Lossless Scaling** can follow video fullscreen, switching on and off with it.
+- **Spotify**: silent outros are skipped automatically.
+- **Extras** you can switch on per PC: volume/brightness/media keys, and a bass EQ that follows a game.
 
-It's made of three pieces. The AHK script and the Chrome extension both connect to a small Node relay over WebSockets on `127.0.0.1:9224`; there is no HTTP port and no temp files:
+## Quick start
+
+**Needs:** Windows 10/11, [AutoHotkey v2](https://www.autohotkey.com/), [Node.js](https://nodejs.org/) with npm, and Google Chrome.
+
+1. **Run `Main.ahk`** with AutoHotkey v2 (as administrator if you want the keys to work in elevated windows too). On first run it creates everything it needs: this PC's settings file, the shared token, and the bridge's `node_modules` (needs internet once).
+2. **Load the extension** in **one** Chrome profile: `chrome://extensions` → Developer mode → *Load unpacked* → the `Extension/` folder. It connects by itself within a few seconds.
+3. **Play a video** on YouTube, Bilibili or Douyin. It goes fullscreen.
+4. **Optional:** switch on what this PC has (Lossless Scaling, the extra keys, the speaker bass) in `mediactrl_settings.ini`, then reload the script (tray icon → *Reload Script*). See [Per-PC settings](#per-pc-settings).
+
+## What it does
+
+**Auto-fullscreen**
+- When a video starts playing, the page goes fullscreen using the site's own fullscreen button, so its UI lays out as usual. A small clock shows in the top-right corner while you're in fullscreen.
+- Leaving fullscreen yourself (`Esc`, `b`, clicking the video, the site's button, double-click) means "not this video": it won't re-enter until playback stops, even after switching apps or tabs and coming back. Another video still auto-enters. Reloading the page or closing the tab doesn't count as leaving.
+- Clicking the video in fullscreen pauses it and then exits.
+- Hover previews and thumbnails never count as "the video".
+
+**Typing always works.** The video keys switch off while you type anywhere: page text fields (including Bilibili comments and YouTube live chat), the address bar, the find bar and dialogs.
+
+**Even loudness (page leveler).** Each video's loudness is measured and brought to one target level: quiet videos up, loud ones down (up to ±18 dB), with a limiter for peaks. `-` / `=` set the level for all videos, and it's remembered.
+
+**Lossless Scaling follows fullscreen** (optional). Scaling turns on when a video's fullscreen starts and off when it ends, however it ends. The scaling key only ever goes to Chrome; if Chrome isn't in front at that moment, it waits until it is. The script checks Lossless Scaling's actual state, so it never toggles the wrong way.
+
+**Spotify silent-outro skip** (on by default). For the Spotify desktop app: if a track is still "playing" but silent in its last 10 seconds, it skips to the next one. Your own skips don't trigger it.
+
+**Speaker bass EQ** (optional). With a Harman Kardon speaker, a bass-boost preset (Peace / Equalizer APO) is on while one of your configured games is focused, and off otherwise.
+
+## Keys
+
+| Key | Does | When |
+|---|---|---|
+| `Esc` | Leave / re-enter fullscreen | Video mode¹ |
+| `b` | Pause and leave fullscreen (enter when not fullscreen) | Video mode |
+| `w` `a` `s` | Up / Left / Down arrow | Video mode |
+| `d`, `Right` | Tap: seek forward (the site's Right). **Hold: play at 2×** until released | Video mode |
+| `e` / `q` | Skip forward / back 87 s | Video mode |
+| `0` | Back to the start | Video mode |
+| `1` `2` `3` `4` `5` | Speed 1× / 1.5× / 2× / 3× / 0.5× | Video mode |
+| `-` / `=` | All videos quieter / louder (2 dB per press) | Video mode |
+| `F1` `F2` `F3` | Toggle Lossless Scaling by hand | Video mode, if Lossless is on |
+| `F6` | Status tooltip on/off | Always |
+| `F7` | Video automation on/off (off also leaves fullscreen) | Always |
+| `PgUp` / `PgDn`, `F14` / `F13` | Volume up / down | If `[keys] volume` is on |
+| `Home` / `End` | Send F16 / F15 (e.g. Twinkle Tray brightness) | If `[keys] brightness` is on |
+| `Play/Pause`, `Insert`, `Next` | Spotify play/pause, next, **previous** | If `[keys] spotify` is on |
+| `Media_Prev` | **Shut the PC down immediately, no prompt** | If `[keys] shutdown` is on |
+
+¹ *Video mode*: Chrome is in front with a video page of YouTube, Bilibili or Douyin, and you're not typing. Outside video mode these keys do what they normally do. Keys whose group is off also behave normally (PgUp scrolls, Home/End move the cursor, …).
+
+The **F6 tooltip** shows the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, whether the page is levelled, the speaker/bass and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player) appear only when they happen.
+
+## Per-PC settings
+
+Everything that differs between PCs is in `mediactrl_settings.ini` next to the script. It's gitignored, so each PC keeps its own. A fresh clone starts from `mediactrl_settings.example.ini`, which lists every option with a comment. With the defaults you get the video features and the Spotify outro skip, and nothing else touches your keys.
+
+| Section | Keys | Default |
+|---|---|---|
+| `[lossless]` | `enabled`, `hotkey` (Lossless Scaling's scaling hotkey) | off, `{F1}` |
+| `[keys]` | `volume`, `brightness`, `spotify`, `shutdown` | all off |
+| `[spotify]` | `outroSkip`, `exePath` (only if Spotify can't be found) | on, empty |
+| `[speaker]` | `harmanBass`, `peacePath`, `games` (comma-separated, without `.exe`) | off, empty, empty |
+| `[leveler]` | `targetDb` (set by the `-` / `=` keys) | -20 |
+
+Switches take `1`/`0` (or `on`/`off`, `yes`/`no`); anything missing or unreadable keeps its default. Keep the file ASCII, and reload the script after editing.
+
+**Things to know on a new PC**
+- F19 is used internally as the "go fullscreen now" key, so nothing else should use it.
+- Lossless Scaling needs its scaling hotkey set to `[lossless] hotkey`.
+- The bass EQ expects a speaker whose name contains "Harman Kardon", and Peace presets on Ctrl+Alt+F11 (bass off) / Ctrl+Alt+F12 (bass on).
+
+## Shared settings (`Config.ahk`)
+
+These are the same on every PC and are kept in git.
+
+| Setting | Purpose |
+|---|---|
+| `SITES` | Per site: domain, the site's fullscreen button, the player container, the fallback fullscreen key. Sent to the extension. |
+| `PAGE_LEVELER` | Loudness leveler: on/off, default target, max boost/cut, averaging time, silence and limiter levels |
+| `LEVEL_STEP_DB` / `LEVEL_MIN_DB` / `LEVEL_MAX_DB` | How far `-` / `=` move the level per press, and its limits |
+| `SEEK_SECONDS` / `SPEEDS` | `e` / `q` jump size; the `1`–`5` speeds |
+| `HOLD_SPEED` / `HOLD_TAP_MS` | Speed while `d` / Right is held; how short a press counts as a tap |
+| `CLICK_EXIT_WAIT_MS` | How long `b` / a video click waits for the site's pause before exiting anyway |
+| `TICK_MS` | Video evaluation timer (ms) |
+| `SONG` / `SONG_EXE` | How Spotify is recognised (session name, executable) |
+| `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
+
+## How it works
 
 ```
 ┌─────────────┐  WebSocket   ┌──────────────────┐  WebSocket   ┌─────────────┐
@@ -14,162 +103,61 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
                  (+ token)       127.0.0.1:9224      (+ token)     SMTC / WASAPI
 ```
 
-- **AHK script** — the brain. Decides when to enter/leave fullscreen, when the video keys are on, and when to toggle Lossless Scaling, using pure, tested rule modules (`Lib/Decide.ahk`, `Lib/FsMachine.ahk`, `Lib/LosslessPolicy.ahk`). Also owns Spotify (SMTC + WASAPI) and all the hotkeys.
-- **Node bridge** (`bridge/bridge.js`) — relays JSON between the two. Every client must open with `hello` and the shared token; extension clients also need a `chrome-extension://` origin. One client per role; a second copy of the extension is refused while the first is alive. The token is never sent outward.
-- **Chrome extension (MV3)** — reports the active tab's video state (site, playable, playing, ready, fullscreen, typing) and runs fullscreen/seek/speed inside the page. Site settings come from `Config.ahk`.
+- **AHK script:** the brain. It decides when to enter or leave fullscreen, when the video keys are on, and when to toggle Lossless Scaling, using small pure rule modules (`Lib/Decide.ahk`, `Lib/FsMachine.ahk`, `Lib/LosslessPolicy.ahk`). It also handles Spotify and all the hotkeys.
+- **Chrome extension (MV3):** reports the active tab's video state (site, playing, ready, fullscreen, typing) and runs fullscreen, seek, speed and the loudness leveler inside the page.
+- **Node bridge:** relays JSON between the two on `127.0.0.1` only.
+  - **Access:** every client must open with the shared token, and the extension must also come from a `chrome-extension://` origin. The token is never sent back out.
+  - **One extension:** only one extension copy is accepted at a time.
+  - **Lifecycle:** AHK starts the bridge, and exiting or reloading closes only that process, never other `node.exe`.
 
-## Features
+**Fullscreen, step by step**
+1. **Arm:** once the video plays and its player is ready, AHK arms the page and presses **F19**, which counts as a real keypress, so the page may go fullscreen.
+2. **Enter:** the page clicks the site's fullscreen button. If that doesn't work, it falls back to fullscreening the player, and only then to the site's own key (`f`/`h`).
+3. **Confirm:** fullscreen is confirmed by the page's own report, never assumed. Each request gets one second and one retry, then the page's last report wins.
+4. **Exit:** leaving goes through the page's `exitFullscreen()`, never a toggle key, so it can't accidentally re-enter.
+5. **Every synthetic key** (F19, arrows, Space, the Lossless key) is sent only while Chrome is the foreground app.
 
-**Page-tracked fullscreen (no guessing)**
-- Fullscreen state comes from the page itself (`fullscreenchange`), never from counting keypresses.
-- Entering: once the video is playing and its player is ready, AHK arms the page and presses **F19**; the page clicks the site's own fullscreen button (falling back to `requestFullscreen()` on the player, then to the site's key). Exiting goes through `document.exitFullscreen()` — no toggle key.
-- Each request gets one confirmation window (1 s) and one retry, then gives up and trusts the page's last report.
-- Exits you make yourself — `Esc`, `b`, clicking the video, the site's button, double-click, Chrome's own Esc — count as a **manual exit**: that video won't auto-re-enter until playback stops, also after switching apps or tabs and coming back. A different video still auto-enters. Reloading the page or closing the tab is not a manual exit.
-- Clicking the video in fullscreen: the site pauses it, then fullscreen exits (at most 0.5 s later). `b` while playing does the same via Space.
-- Leaving a playable page needs 3 consecutive ticks of "not playable", so Douyin's feed swapping `<video>`s doesn't cause false exits.
-- YouTube and Bilibili only count the video inside the real player, so hover previews never count.
+## Development
 
-**Lossless Scaling follows fullscreen** (opt-in per PC: `[lossless]` in the settings file)
-- Turns on when a video's fullscreen is confirmed and off when it ends — so F5, Ctrl+W, the site button and double-click all switch it off through the page's report.
-- The Lossless key is only ever sent while Chrome is the foreground app; a change confirmed while Chrome isn't in front waits until it is.
-- Scaling state is detected from Lossless Scaling's overlay window — only an overlay over Chrome's monitor counts — so the key is only sent when the state actually differs. F1/F2/F3 (video mode) still toggle it by hand; the next automatic change goes the right way.
-- After an AHK reload mid-fullscreen, scaling is assumed to still be on (no extra toggle).
-
-**Typing passes through**
-- Video keys turn off while a text field has focus — including fields inside shadow roots (Bilibili comments) and iframes (YouTube live chat) — and while Chrome's own UI has focus (address bar, find bar, dialogs).
-
-**Video mode keys** (only while watching a video on a matched site in Chrome)
-- `w a s d` → arrow keys. A tap of `d` or Right seeks as usual; **holding** `d` or Right plays the video at 2× until you let go, on every site (YouTube included).
-- `e` / `q` skip ±87 s, `0` restarts, `1 2 3 4 5` set speed 1×/1.5×/2×/3×/0.5×.
-- `Esc` toggles fullscreen; `b` pauses and exits (or enters when not fullscreen).
-- `-` / `=` make every video quieter / louder (moves the page leveler's target 2 dB; remembered across restarts).
-- `F1 F2 F3` → Lossless Scaling hotkey passthrough.
-- `F7` toggles video-mode monitoring on/off entirely (exits fullscreen if currently in it).
-
-**Page leveler (every video at the same loudness)**
-- Runs inside the page: each video's loudness is measured over a few seconds and its gain moved toward one target level — quiet videos are turned up, loud ones down (±18 dB by default) — with a limiter catching peaks. Gaps and silence hold the gain; a new video starts from the last one's gain and settles within about a second.
-- Only attaches to video sources Web Audio can process (YouTube/Bilibili's streaming players, same-origin media), because anything else would play silent. Tuned via `CONFIG.PAGE_LEVELER`.
-
-**Fullscreen clock overlay**
-- A small, click-through clock in the top-right corner of Chrome's monitor while in fullscreen video, filling the gap left by Windows' taskbar clock being hidden.
-
-**Spotify silent-outro skipping** (on by default; `[spotify] outroSkip`)
-- Polls WASAPI peak metering for the native Spotify app (`Spotify.exe`) and auto-skips to the next track if audio is playing but silent in the last 10 seconds of a track — catches silent outros that don't change Spotify's reported playback status.
-- Debounced against manual track changes (keyboard, mouse, phone) so a real skip doesn't get misread as a false outro trigger.
-
-**Speaker / bass EQ** (opt-in per PC: `[speaker]`)
-- Detects the active playback device once at startup.
-- If it's a Harman Kardon speaker, toggles a bass-boost EQ preset (via Peace/EqualizerAPO hotkeys) on/off depending on whether one of the configured games is the focused, running window.
-
-**Personal key groups** (each opt-in per PC: `[keys]`; off, the keys do what Windows normally does)
-- `volume`: PgUp/PgDn and F13/F14 → Windows volume.
-- `brightness`: Home/End → F15/F16 (e.g. Twinkle Tray's brightness hotkeys).
-- `spotify`: Play/Pause → Spotify, Next → Spotify *previous*, Insert → Spotify next.
-- `shutdown`: Media_Prev → shuts the PC down immediately, no prompt.
-
-**Always on**
-- `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, whether the page's volume is levelled, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player) show only when they happen.
-
-Removed in the page-tracked rewrite: `F5` (in video mode — Chrome's own F5 reloads, and Lossless switches off through the page's report), `F8` (next episode), the `LButton` click hook (the extension reports clicks), and the `Ctrl+W` state hack (closing the tab is reported as a page change).
-
-## Requirements
-
-- Windows 10/11
-- [AutoHotkey v2](https://www.autohotkey.com/)
-- [Node.js](https://nodejs.org/) + npm (the AHK script installs the bridge's `ws` package on first run if missing)
-- Google Chrome (or any Chromium browser that supports MV3 extensions)
-
-## Setup
-
-1. **Run the AHK script** — open `Main.ahk` with AutoHotkey v2. This will:
-   - create this PC's settings file, `mediactrl_settings.ini`, from `mediactrl_settings.example.ini` (see "Per-PC settings" below);
-   - create the shared token (`mediactrl_token.txt`) and write `Extension/token.json` — both automatic and gitignored;
-   - start the Node bridge (`bridge/bridge.js`, installing `bridge/node_modules` on first run) and connect to it;
-   - register the hotkeys (and, if switched on, speaker detection and bass EQ).
-2. **Install the Chrome extension in one Chrome profile only** — go to `chrome://extensions`, enable Developer Mode, click "Load unpacked," and select the `Extension/` folder. (A second copy in another profile is refused by the bridge while the first is connected.)
-3. The extension reads `token.json` and connects to the bridge by itself (it retries every 2 s until AHK is up).
-4. **Optional:** switch on what this PC has — Lossless Scaling, the personal keys, the Harman Kardon bass — in `mediactrl_settings.ini`, then reload the script.
-
-### Per-PC settings
-
-Everything that differs between PCs lives in `mediactrl_settings.ini` next to the script. It's gitignored, so each PC keeps its own; a fresh clone starts from `mediactrl_settings.example.ini`, which has every option with a comment. With the defaults you get the video features only (auto-fullscreen, page leveler, video keys, F6/F7) plus the Spotify outro skip; nothing else touches your keys.
-
-| Section | Keys | Default |
-|---|---|---|
-| `[lossless]` | `enabled`, `hotkey` (Lossless Scaling's scaling hotkey) | off, `{F1}` |
-| `[keys]` | `volume`, `brightness`, `spotify`, `shutdown` | all off |
-| `[spotify]` | `outroSkip`, `exePath` (only if Spotify can't be found) | on, empty |
-| `[speaker]` | `harmanBass`, `peacePath`, `games` (comma-separated, without `.exe`) | off, empty, empty |
-| `[leveler]` | `targetDb` — set by the `-` / `=` keys | -20 |
-
-Switches take `1`/`0` (or `on`/`off`, `yes`/`no`); anything missing or unreadable keeps its default. Keep the file ASCII.
-
-Exiting or reloading the script closes only its own bridge process — other `node.exe` processes are left alone.
-
-## Tests
-
-From the repo root (PowerShell):
+**Tests** (from the repo root, PowerShell):
 
 ```powershell
-& "C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe" /ErrorStdOut tests\RunTests.ahk   # rule modules: "N passed, M failed", exit 1 on failure
+& "C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe" /ErrorStdOut tests\RunTests.ahk   # AHK: "N passed, M failed", exit 1 on failure
 node --test bridge/ tests/js/                                                          # bridge relay + extension page logic
 ```
 
-- `tests/RunTests.ahk` runs `tests/Test*.ahk`: the fullscreen rules (`Decide`), the fullscreen state machine (`FsMachine`), the Lossless policy, the monitor geometry, the settings loader, and end-to-end scenarios of the video glue (`StateEngine.ahk` + `Video.ahk`) against a fake Chrome/keyboard (`VideoEnv`) — auto-fullscreen, manual exits, `b`/click exits, Lossless on/off and hold-back, typing, the leveler keys.
-- `bridge/bridge.test.mjs` covers the token/origin checks, relaying, config hand-off and the one-extension rule; `tests/js/pageLogic.test.js` covers the extension's pure page helpers.
-- Results of the hands-on checks (F19 activation, Lossless detection, hotkey responsiveness, per-site behaviour) are in `docs/windows-checks.md`.
+- **`tests/RunTests.ahk`** covers:
+  - the pure modules: fullscreen rules, fullscreen state machine, Lossless policy, monitor geometry, settings loader;
+  - end-to-end scenarios of the video code against a fake Chrome and keyboard (`VideoEnv`): auto-fullscreen, manual exits, `b`/click exits, Lossless on/off and hold-back, typing, the level keys.
+- **`bridge/bridge.test.mjs`** covers the token and origin checks, relaying, the config hand-off and the one-extension rule.
+- **`tests/js/pageLogic.test.js`** covers the extension's pure page helpers.
+- **`docs/windows-checks.md`** records the hands-on checks on the real setup (F19, Lossless detection, per-site behaviour, …) and what was found.
 
-## Configuration
-
-Shared settings live in `Config.ahk` (per-PC ones are in the settings file above):
-
-| Setting | Purpose |
-|---|---|
-| `SONG` | Process name fragment used to match Spotify's SMTC/WASAPI sessions (`spotify`) |
-| `SONG_EXE` | Native Spotify executable name, used to activate/launch it when no SMTC session exists yet (e.g. `Spotify.exe`) |
-| `SITES` | Per-site settings, sent to the extension: domain, the site's fullscreen button, the player container, the fallback fullscreen key |
-| `TICK_MS` | Video evaluation timer (ms) |
-| `SEEK_SECONDS` / `SPEEDS` | `e`/`q` jump size, and the `1 2 3 4 5` playback speeds |
-| `HOLD_SPEED` / `HOLD_TAP_MS` | Rate while `d`/Right is held, and how short a press counts as a tap |
-| `CLICK_EXIT_WAIT_MS` | How long `b`/a video click waits for the site's pause before exiting anyway |
-| `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
-| `PAGE_LEVELER` | The in-page loudness leveler: on/off, default target level, max boost/cut, averaging time, silence and limiter levels |
-| `LEVEL_STEP_DB` / `LEVEL_MIN_DB` / `LEVEL_MAX_DB` | How far `-`/`=` move the target per press, and its limits |
-
-## ⚠️ Things to know on a new PC
-
-- F19 is used as the "fullscreen now" nudge, so it must be free.
-- The video keys (`b w a s d 0-5 e q - = Esc`, Right) are taken over only while a video plays on YouTube, Bilibili or Douyin in Chrome, and never while you type.
-- The bass EQ switch expects a speaker named "Harman Kardon" and Peace/Equalizer APO presets on Ctrl+Alt+F11/F12.
-
-## File overview
+**Files**
 
 | File | Responsibility |
 |---|---|
-| `Main.ahk` | Entry point — startup sequence, timers, exit handler |
-| `Config.ahk` | Shared settings, including the video sites; loads the per-PC `mediactrl_settings.ini` into `SETTINGS` |
-| `State.ahk` | Shared global state object |
-| `StateEngine.ahk` | Program/Spotify state, and the video glue: page reports → rules → fullscreen requests, Lossless, video keys on/off |
-| `Video.ahk` | Game monitor, video-mode hotkey handlers |
-| `Audio.ahk` | Spotify outro detection and playback controls |
-| `Wasapi.ahk` | The WASAPI audio-session loop (Spotify's peak meter) |
-| `Speaker.ahk` | Startup speaker detection, bass EQ |
-| `Bridge.ahk` | Token, `Extension/token.json`, starting/killing the Node bridge |
-| `BridgeClient.ahk` | AHK's WebSocket client to the bridge (connect, send, reconnect) |
-| `Hotkeys.ahk` | Static (always-on) hotkeys |
-| `UI.ahk` | Debug tooltip and the fullscreen clock overlay |
-| `Lib/Decide.ahk` | Pure rules: enter/exit fullscreen, video keys on/off, manual exit per page |
-| `Lib/FsMachine.ahk` | Pure fullscreen state machine: requests confirmed only by page reports |
-| `Lib/LosslessPolicy.ahk` | Pure Lossless Scaling on/off rules |
-| `Lib/LosslessDetect.ahk` | Detects whether Lossless Scaling is currently scaling on a monitor (its overlay window) |
+| `Main.ahk` | Entry point: startup, timers, exit |
+| `Config.ahk` | Shared settings; loads the per-PC settings into `SETTINGS` |
+| `State.ahk` | Shared global state |
+| `StateEngine.ahk` | Program/Spotify state, and the video glue: page reports → rules → fullscreen, Lossless, video keys |
+| `Video.ahk` | Video-mode key handlers, game monitor |
+| `Hotkeys.ahk` | F6, F7 and the optional key groups |
+| `Audio.ahk` | Spotify outro skip and playback controls |
+| `Wasapi.ahk` | Audio-session loop (Spotify's peak meter) |
+| `Speaker.ahk` | Speaker detection, bass EQ |
+| `Bridge.ahk` | Token, `Extension/token.json`, starting/stopping the bridge |
+| `BridgeClient.ahk` | AHK's WebSocket connection to the bridge |
+| `UI.ahk` | F6 tooltip, fullscreen clock |
+| `Lib/Decide.ahk`, `Lib/FsMachine.ahk`, `Lib/LosslessPolicy.ahk` | Pure rules: fullscreen decisions, fullscreen state machine, Lossless on/off |
+| `Lib/Screen.ahk` | Pure monitor geometry |
 | `Lib/Settings.ahk` | Reads the per-PC settings file over defaults |
-| `Lib/Screen.ahk` | Pure monitor geometry: which monitor a window is on, overlay coverage, corner positions |
-| `Lib/Media.ahk` | AHK wrapper around Windows' `GlobalSystemMediaTransportControlsSessionManager` |
+| `Lib/LosslessDetect.ahk` | Whether Lossless Scaling is scaling (its overlay window) |
+| `Lib/Media.ahk` | Windows media-session (SMTC) wrapper, used for Spotify |
 | `Lib/WebSocket.ahk`, `Lib/JSON.ahk` | Vendored from [thqby/ahk2_lib](https://github.com/thqby/ahk2_lib) (MIT, `Lib/ahk2_lib-LICENSE.txt`) |
-| `bridge/bridge.js` | The Node WebSocket relay (`bridge/package.json` holds its `ws` dependency) |
-| `Extension/content.js` | Runs in each page — finds the active `<video>`, reports its state, runs fullscreen (F19 nudge)/seek/speed/hold-to-speed, reports clicks on the video |
-| `Extension/lib/pageLogic.js` | Pure page helpers (site matching, watch-page URLs, typing detection, leveler maths), unit-tested |
-| `Extension/background.js` | MV3 service worker — the bridge connection; forwards only the active tab's reports and routes commands to it |
-| `Extension/manifest.json` | Chrome extension manifest (MV3) |
-| `tests/` | AHK test runner + rule-module tests, and the node test for `pageLogic.js` |
-| `docs/windows-checks.md` | Results of the hands-on Windows checks |
+| `bridge/bridge.js` | The Node relay (`bridge/package.json`: its `ws` dependency) |
+| `Extension/content.js` | In each page: finds the active video, reports its state, runs fullscreen/seek/speed/hold-to-speed and the loudness leveler, reports clicks on the video |
+| `Extension/background.js` | Service worker: the bridge connection; forwards only the active tab's reports and routes commands to it |
+| `Extension/lib/pageLogic.js` | Pure page helpers (site matching, typing detection, leveler maths) |
+| `mediactrl_settings.example.ini` | Template for the per-PC settings file |
+| `tests/`, `docs/windows-checks.md` | Tests; hands-on check results |
