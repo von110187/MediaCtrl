@@ -12,8 +12,8 @@ Wasapi_ForEachSession(procMatch, callback, &err := "") {
     global WASAPI_CLSIDS
     devicePtr := 0, managerPtr := 0, sessionEnumPtr := 0
     try {
-        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
-        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr)  ; GetDefaultAudioEndpoint(eRender, eMultimedia)
+        deviceEnum := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
+        ComCall(4, deviceEnum, "int", 0, "int", 1, "ptr*", &devicePtr)  ; GetDefaultAudioEndpoint(eRender, eMultimedia)
 
         managerIID := Buffer(16)
         DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", managerIID)

@@ -176,3 +176,18 @@ Douyin: a tap of `d` or Right seeks as before; holding either plays at 2×
   button's own fullscreen before reporting `enterFailed`. With the forced
   overlap: 24/24 re-entries settled, no `f` sent, no exits. With the normal
   cutoff: re-entry stays in ✓.
+
+## 13. Speaker keep-awake (SoundSticks 4) — 2026-10-17: PASS
+
+The SoundSticks 4 (3.5 mm) goes to standby after a stretch of silence — about
+10 minutes per a community answer; Harman documents no setting for it.
+`[speaker] keepAwake` plays a 2 s tone every 5 min while every audio session
+reads silent.
+- 20 Hz at -30 dB: inaudible, but the speaker still went to sleep after 15+
+  min of silence (Windows volume 50 %; low tones also get filtered on the way).
+  The silence check itself was confirmed working (all sessions at 0).
+- Candidates, all inaudible to the user: 20 Hz at -18 / -12 dB, 30 Hz at
+  -18 dB, 19 kHz at -20 dB.
+- 19 kHz at -20 dB: after 15+ min of silence, sound started instantly ✓.
+  Now the default.
+- `SoundPlay` failed on a long file path (MCI); keep-awake uses `PlaySound`.

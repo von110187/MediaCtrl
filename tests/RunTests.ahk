@@ -18,9 +18,11 @@ Assert(cond, msg := "") {
 #Include %A_ScriptDir%\..\Lib\LosslessPolicy.ahk
 #Include %A_ScriptDir%\..\Lib\Screen.ahk
 #Include %A_ScriptDir%\..\Lib\Settings.ahk
+#Include %A_ScriptDir%\..\Lib\Tone.ahk
 #Include %A_ScriptDir%\..\Config.ahk
 #Include %A_ScriptDir%\..\State.ahk
 #Include %A_ScriptDir%\..\StateEngine.ahk
+#Include %A_ScriptDir%\..\Wasapi.ahk
 #Include %A_ScriptDir%\..\Speaker.ahk
 #Include %A_ScriptDir%\..\Video.ahk
 #Include %A_ScriptDir%\TestDecide.ahk
@@ -28,6 +30,7 @@ Assert(cond, msg := "") {
 #Include %A_ScriptDir%\TestLossless.ahk
 #Include %A_ScriptDir%\TestScreen.ahk
 #Include %A_ScriptDir%\TestSettings.ahk
+#Include %A_ScriptDir%\TestTone.ahk
 #Include %A_ScriptDir%\TestVideoGlue.ahk
 
 passed := 0, failed := 0
@@ -35,9 +38,9 @@ for fn in TESTS {
     try {
         fn()
         passed += 1
-    } catch as e {
+    } catch as testErr {
         failed += 1
-        FileAppend("FAIL " fn.Name ": " e.Message " (line " e.Line ")`n", "*")
+        FileAppend("FAIL " fn.Name ": " testErr.Message " (line " testErr.Line ")`n", "*")
     }
 }
 FileAppend(passed " passed, " failed " failed`n", "*")
