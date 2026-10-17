@@ -22,11 +22,7 @@ UpdateState(sessions) {
 
 _UpdateProgramState() {
     global State
-    try {
-        prog := WinGetProcessName("A")
-    } catch {
-        prog := ""
-    }
+    prog := VideoEnv.processName()
     if State.currentProgram != prog {
         State.currentProgram := prog
         _OnProgramChanged()
@@ -94,6 +90,30 @@ _UpdateAdaptiveTimer() {
 
 ; ============ VIDEO ============
 
+; Everything the video glue does outside the script — keys, bridge messages,
+; the foreground window, time, timers, hotkeys, Lossless detection, the
+; clock — goes through VideoEnv, so tests/TestVideoGlue.ahk can swap in a
+; fake (no real keys, no Chrome, a fake clock). Called as VideoEnv.send(keys),
+; so each function gets VideoEnv as its first parameter.
+global VideoEnv := {
+    now:            (*) => A_TickCount,
+    foreground:     (*) => WinExist("A"),
+    processName:    (*) => _ForegroundProcessName(),
+    send:           (env, keys) => Send(keys),
+    bridgeSend:     (env, msg) => BridgeClient_Send(msg),
+    connected:      (*) => BridgeClient_Connected(),
+    later:          (env, fn, ms) => SetTimer(fn, -ms),
+    cancel:         (env, fn) => SetTimer(fn, 0),
+    losslessActive: (*) => _LosslessActive(_ChromeMonitor()),
+    clock:          (*) => UpdateClockVisibility(),
+    setHotkeys:     (env, on) => _ApplyVideoHotkeys(on),
+}
+
+_ForegroundProcessName() {
+    try return WinGetProcessName("A")
+    return ""
+}
+
 VideoStart() {
     global CONFIG
     SetTimer(_VideoTick, CONFIG.TICK_MS)
@@ -107,7 +127,7 @@ _VideoTick() {
     global State
     _CheckForeground()
     VideoEvaluate(true)
-    _VideoRun(FsMachine.Timeout(State.machine, A_TickCount))
+    _VideoRun(FsMachine.Timeout(State.machine, VideoEnv.now()))
 }
 
 _OnShellHook(wParam, lParam, *) {
@@ -120,14 +140,14 @@ _OnShellHook(wParam, lParam, *) {
 ; change that was held back while Chrome wasn't foreground.
 _CheckForeground() {
     global State
-    hwnd := WinExist("A")
+    hwnd := VideoEnv.foreground()
     if hwnd = State.foregroundHwnd
         return
     State.foregroundHwnd := hwnd
     _UpdateProgramState()
     if _ChromeFocused() {
         State.chromeHwnd := hwnd
-        BridgeClient_Send({type: "refresh"})
+        VideoEnv.bridgeSend({type: "refresh"})
         _LosslessDetect()
         _LosslessApply(LosslessPolicy.OnChromeForeground(State.lossless))
     }
@@ -136,8 +156,7 @@ _CheckForeground() {
 
 ; "Chrome is foreground" means the foreground window's process is chrome.exe
 _ChromeFocused() {
-    try return WinGetProcessName("A") = "chrome.exe"
-    return false
+    return VideoEnv.processName() = "chrome.exe"
 }
 
 ; The monitor ({l, t, r, b}) the last foreground Chrome window is on — where
@@ -160,7 +179,7 @@ _ChromeMonitor() {
 ; every key we send lands in Chrome or nowhere
 _SendToChrome(keys) {
     if _ChromeFocused()
-        Send(keys)
+        VideoEnv.send(keys)
 }
 
 _CurrentSite() {
@@ -180,7 +199,7 @@ _VideoInputs() {
     global State
     p := State.page
     return {
-        connected:       BridgeClient_Connected() && IsObject(p),
+        connected:       VideoEnv.connected() && IsObject(p),
         monitorOn:       State.monitorVideo,
         chromeFocused:   _ChromeFocused(),
         site:            p ? p.site : "",
@@ -198,18 +217,18 @@ VideoEvaluate(isTick) {
     actions := Decide.Evaluate(State.rules, _VideoInputs(), isTick)
     _SetVideoHotkeys(actions.keys)
     if actions.enter
-        _VideoRun(FsMachine.Request(State.machine, "enter", A_TickCount, _PageId()))
+        _VideoRun(FsMachine.Request(State.machine, "enter", VideoEnv.now(), _PageId()))
     if actions.exit
-        _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+        _VideoRun(FsMachine.Request(State.machine, "exit", VideoEnv.now(), _PageId()))
 }
 
 _VideoRun(cmd) {
     global State, CONFIG
     switch cmd {
         case "nudge":
-            BridgeClient_Send({type: "armFullscreen"})
+            VideoEnv.bridgeSend({type: "armFullscreen"})
         case "exitCmd":
-            BridgeClient_Send({type: "exitFullscreen"})
+            VideoEnv.bridgeSend({type: "exitFullscreen"})
         case "fsKey":
             ; only into the page the request was for, and never while typing
             site := _CurrentSite()
@@ -231,7 +250,7 @@ _NotifyFullscreen(adopted := false) {
     if fs == State.lastFsState
         return
     State.lastFsState := fs
-    UpdateClockVisibility()
+    VideoEnv.clock()
     if fs == "fullscreen" || fs == "normal" {
         _LosslessDetect()
         _LosslessApply(LosslessPolicy.OnFullscreenChange(State.lossless, fs, _PageId(), _ChromeFocused(), adopted))
@@ -242,15 +261,15 @@ _NotifyFullscreen(adopted := false) {
 ; after we pressed the key: the overlay takes a moment to appear or go.
 _LosslessDetect() {
     global State
-    if A_TickCount - State.losslessSentAt > 1500
-        LosslessPolicy.SetDetected(State.lossless, _LosslessActive(_ChromeMonitor()))
+    if VideoEnv.now() - State.losslessSentAt > 1500
+        LosslessPolicy.SetDetected(State.lossless, VideoEnv.losslessActive())
 }
 
 _LosslessApply(action) {
     global State, CONFIG
     if action != "toggle"
         return
-    State.losslessSentAt := A_TickCount
+    State.losslessSentAt := VideoEnv.now()
     _SendToChrome(CONFIG.LOSSLESS_HOTKEY)
 }
 
@@ -259,13 +278,13 @@ _LosslessApply(action) {
 _VideoManualExit() {
     global State
     Decide.OnUnrequestedExit(State.rules, false, _PageId())
-    _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+    _VideoRun(FsMachine.Request(State.machine, "exit", VideoEnv.now(), _PageId()))
 }
 
 _VideoCancelPendingExit() {
     global State
     State.pendingExit := false
-    SetTimer(_VideoPendingExitTimeout, 0)
+    VideoEnv.cancel(_VideoPendingExitTimeout)
 }
 
 ; b / click while playing: the site pauses first, then we exit. Sites that
@@ -275,7 +294,7 @@ _VideoExitAfterPause() {
     global State, CONFIG
     _VideoCancelPendingExit()
     State.pendingExit := true
-    SetTimer(_VideoPendingExitTimeout, -CONFIG.CLICK_EXIT_WAIT_MS)
+    VideoEnv.later(_VideoPendingExitTimeout, CONFIG.CLICK_EXIT_WAIT_MS)
 }
 
 _VideoPendingExitTimeout() {
@@ -292,7 +311,7 @@ _VideoToggleFullscreen() {
         _VideoManualExit()
     } else if State.machine.state == "normal" {
         State.rules.manualExit := false
-        _VideoRun(FsMachine.Request(State.machine, "enter", A_TickCount, _PageId()))
+        _VideoRun(FsMachine.Request(State.machine, "enter", VideoEnv.now(), _PageId()))
     }
 }
 
@@ -303,7 +322,7 @@ _VideoOnState(msg) {
     pageChanged := IsObject(State.page) && msg.pageId !== State.page.pageId
     State.page := msg
     fresh := State.machine.lastReported == ""
-    event := FsMachine.Report(State.machine, msg.isFullscreen, pageChanged, A_TickCount, msg.pageId)
+    event := FsMachine.Report(State.machine, msg.isFullscreen, pageChanged, VideoEnv.now(), msg.pageId)
     if event == "unrequestedExit"
         Decide.OnUnrequestedExit(State.rules, pageChanged, msg.pageId)
     _NotifyFullscreen(fresh)
@@ -325,7 +344,7 @@ OnBridgeMessage(msg) {
             return
         case "extConnected":
             ; (re)connected to the bridge, or the extension came or went
-            BridgeClient_Send({type: "config", sites: CONFIG.SITES, leveler: CONFIG.PAGE_LEVELER})
+            VideoEnv.bridgeSend({type: "config", sites: CONFIG.SITES, leveler: CONFIG.PAGE_LEVELER})
             _BridgeLogAdd(msg.type, msg.connected ? "yes" : "no")
             VideoEvaluate(false)
         case "state":
@@ -338,10 +357,10 @@ OnBridgeMessage(msg) {
             if State.machine.state != "entering" || !p || msg.pageId !== p.pageId || msg.pageId !== State.machine.pageId
                 return
             ; not from inside the socket callback
-            SetTimer(() => _SendToChrome("{F19}"), -1)
+            VideoEnv.later(() => _SendToChrome("{F19}"), 1)
         case "enterFailed":
             _BridgeLogAdd(msg.type)
-            _VideoRun(FsMachine.EnterFailed(State.machine, A_TickCount))
+            _VideoRun(FsMachine.EnterFailed(State.machine, VideoEnv.now()))
         case "videoClick":
             _BridgeLogAdd(msg.type)
             ; the site's own click handler pauses the video; exit once that lands
@@ -367,7 +386,7 @@ VideoSetMonitor(on) {
     global State
     State.monitorVideo := on
     if !on && State.machine.state == "fullscreen"
-        _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+        _VideoRun(FsMachine.Request(State.machine, "exit", VideoEnv.now(), _PageId()))
     VideoEvaluate(false)
 }
 
@@ -379,7 +398,7 @@ VideoStatus() {
         manualExit: State.rules.manualExit,
         keysOn:     State.videoHotkeys,
         monitorOn:  State.monitorVideo,
-        connected:  BridgeClient_Connected(),
+        connected:  VideoEnv.connected(),
         lastGaveUp: State.lastGaveUp,
         lossless:   State.lossless,
     }

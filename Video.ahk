@@ -52,10 +52,15 @@ InitVideoHotkeys() {
 }
 
 _SetVideoHotkeys(enable) {
-    global State, VIDEO_KEYS
+    global State
     if State.videoHotkeys = enable
         return
     State.videoHotkeys := enable
+    VideoEnv.setHotkeys(enable)
+}
+
+_ApplyVideoHotkeys(enable) {
+    global VIDEO_KEYS
     for key in VIDEO_KEYS
         Hotkey(key, enable ? "On" : "Off")
 }
@@ -93,21 +98,21 @@ _HK_HoldSpeed(hk) {
     SetTimer(_HoldSpeedOn, 500)  ; keep-alive: the page drops 2x on its own if these stop
     KeyWait(key)
     SetTimer(_HoldSpeedOn, 0)
-    BridgeClient_Send({type: "holdSpeed", on: false})
+    VideoEnv.bridgeSend({type: "holdSpeed", on: false})
 }
 
 _HoldSpeedOn() {
     global CONFIG
-    BridgeClient_Send({type: "holdSpeed", on: true, rate: CONFIG.HOLD_SPEED})
+    VideoEnv.bridgeSend({type: "holdSpeed", on: true, rate: CONFIG.HOLD_SPEED})
 }
 
-_HK_0(*) => BridgeClient_Send({type: "seek", to: 0})
-_HK_e(*) => BridgeClient_Send({type: "seek", by: CONFIG.SEEK_SECONDS})
-_HK_q(*) => BridgeClient_Send({type: "seek", by: -CONFIG.SEEK_SECONDS})
+_HK_0(*) => VideoEnv.bridgeSend({type: "seek", to: 0})
+_HK_e(*) => VideoEnv.bridgeSend({type: "seek", by: CONFIG.SEEK_SECONDS})
+_HK_q(*) => VideoEnv.bridgeSend({type: "seek", by: -CONFIG.SEEK_SECONDS})
 
 _HK_Speed(hk) {
     global CONFIG
-    BridgeClient_Send({type: "speed", rate: CONFIG.SPEEDS[Integer(SubStr(hk, 2))]})
+    VideoEnv.bridgeSend({type: "speed", rate: CONFIG.SPEEDS[Integer(SubStr(hk, 2))]})
 }
 
 _HK_Esc(*) => _VideoToggleFullscreen()
@@ -119,6 +124,6 @@ _HK_Lossless(*) {
     if !_ChromeFocused()
         return
     LosslessPolicy.OnManualPress(State.lossless, State.machine.state, _PageId())
-    State.losslessSentAt := A_TickCount
-    Send(CONFIG.LOSSLESS_HOTKEY)
+    State.losslessSentAt := VideoEnv.now()
+    VideoEnv.send(CONFIG.LOSSLESS_HOTKEY)
 }
