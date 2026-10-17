@@ -19,7 +19,7 @@ global State := {
     lastGaveUp:   "",        ; time of the last unconfirmed fullscreen request
     foregroundHwnd: 0,       ; last foreground window seen by the shell hook / tick
 
-    videoHotkeys: false,  ; gate for b w a s d 0 1 2 3 4 e q esc f1 f2 f3
+    videoHotkeys: false,  ; gate for b w a s d right 0 1 2 3 4 e q esc f1 f2 f3
 
     monitorVideo: true,  ; F7 toggle
 
