@@ -58,4 +58,6 @@ global State := {
     showTooltip: false,
 
     startupTime: A_TickCount,
+
+    bridgeLog: [],  ; recent bridge messages, newest last — for the F6 tooltip
 }

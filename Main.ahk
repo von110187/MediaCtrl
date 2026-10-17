@@ -5,6 +5,7 @@
 #include State.ahk
 #include StateEngine.ahk
 #include Bridge.ahk
+#include BridgeClient.ahk
 #include Speaker.ahk
 #include Video.ahk
 #include Audio.ahk
@@ -21,6 +22,7 @@ SetTimer(_DeferredBridgeStart, -100)
 _DeferredBridgeStart() {
     Bridge_WriteExtensionToken()
     Bridge_Start()
+    BridgeClient_Connect()  ; retries every 2 s until the bridge is listening
 }
 
 ; Register dynamic video hotkeys as Off — SetVideoHotkeys() controls them
