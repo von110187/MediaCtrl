@@ -12,6 +12,7 @@
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
     const BUTTON_WAIT_MS = 300;   // site button gets this long before the fallback
+    const ENTER_SETTLE_MS = 500;  // a slow site button still gets this long before "enterFailed"
     const REPORT_THROTTLE_MS = 250;
     const HOLD_SPEED_EXPIRE_MS = 1500;  // AHK re-sends holdSpeed every 500 ms while held
 
@@ -238,6 +239,12 @@
             if (!target) throw new Error("no fullscreen target");
             await target.requestFullscreen();
         } catch (e) {
+            // The site button's own request may just be slow (YouTube: up to
+            // ~300 ms and more), and the fallback fails because that request
+            // used the user activation. Give it ENTER_SETTLE_MS before asking
+            // AHK for the fsKey fallback: a key like YouTube's "f" toggles, so
+            // sent into a page that has just gone fullscreen it would exit.
+            if (await waitForFullscreen(ENTER_SETTLE_MS)) return;
             chrome.runtime.sendMessage({ type: "enterFailed", pageId }).catch(() => {});
         }
     }
