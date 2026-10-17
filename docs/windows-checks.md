@@ -191,3 +191,24 @@ reads silent.
 - 19 kHz at -20 dB: after 15+ min of silence, sound started instantly ✓.
   Now the default.
 - `SoundPlay` failed on a long file path (MCI); keep-awake uses `PlaySound`.
+
+## 14. Page leveler on Douyin's feed — 2026-10-18: PASS
+
+Problems scrolling Douyin, and what fixed each one (all checked by the user):
+- **Slow to react between videos.** Douyin reuses a few players, so a new
+  video often played in a player the leveler already knew and was averaged
+  over the full 3 s. Now every new video gets a fresh measurement: settles in
+  about half a second.
+- **Quiet → loud blasted.** The quiet video's boost carried into the loud one.
+  New videos now start at most at `startDb` (-12 dB), never boosted.
+- **Some videos still uneven.** Raw signal energy isn't loudness: the
+  measurement is now K-weighted (ITU-R BS.1770, as LUFS meters). "Even now".
+- **Loops dipped, scrolling back started quiet.** Each video is recognised
+  (URL, or exact duration for streamed players) and its settled level
+  remembered for the page (200 videos): loops keep their level, scrolled-back
+  videos start at it.
+- **Some new videos still started very loud.** New players were only taken
+  over at the next state report (~250 ms), so their first moment was
+  unlevelled: now taken over on `loadedmetadata` / `play`. And with Douyin's
+  own volume turned up: loud sound is now followed within ~0.2 s (fast down,
+  slow up), and no boost is allowed in a video's first 1.5 s.

@@ -49,6 +49,9 @@ global CONFIG := {
     ;   smoothingS — seconds of sound averaged (higher = slower, steadier)
     ;   silenceDb  — quieter than this is a gap: the gain is held
     ;   limiterDb  — peaks above this are squashed
+    ;   startDb    — a video not heard before starts at most this loud
+    ;                (-12 = about a quarter), then goes up or down once
+    ;                measured; videos scrolled back to start at their known level
     PAGE_LEVELER: {
         enabled:    true,
         targetDb:   -20,
@@ -57,6 +60,7 @@ global CONFIG := {
         smoothingS: 3,
         silenceDb:  -50,
         limiterDb:  -3,
+        startDb:    -12,
     },
     ; - / = in video mode move targetDb by this much, within these limits; the
     ; level you pick is remembered in mediactrl_settings.ini ([leveler])
