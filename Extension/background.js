@@ -27,7 +27,12 @@ function send(msg) {
 
 function connect() {
     if (reconnTimer) { clearTimeout(reconnTimer); reconnTimer = null; }
-    if (!token) return;  // token.json missing — AHK writes it on startup
+    if (!token) {
+        // token.json missing — AHK writes it on startup; look again in 2 s
+        // rather than waiting for the 30 s heartbeat alarm
+        reconnTimer = setTimeout(() => loadSettingsAndConnect(false), 2000);
+        return;
+    }
     if (ws && ws.readyState !== WebSocket.CLOSED) return;
 
     lastPongAt = Date.now();
