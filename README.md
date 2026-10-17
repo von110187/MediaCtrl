@@ -42,6 +42,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - `w a s d` → arrow keys. A tap of `d` or Right seeks as usual; **holding** `d` or Right plays the video at 2× until you let go, on every site (YouTube included).
 - `e` / `q` skip ±87 s, `0` restarts, `1 2 3 4 5` set speed 1×/1.5×/2×/3×/0.5×.
 - `Esc` toggles fullscreen; `b` pauses and exits (or enters when not fullscreen).
+- `-` / `=` make every video quieter / louder (moves the page leveler's target 2 dB; remembered across restarts).
 - `F1 F2 F3` → Lossless Scaling hotkey passthrough.
 - `F7` toggles video-mode monitoring on/off entirely (exits fullscreen if currently in it).
 
@@ -96,7 +97,7 @@ From the repo root (PowerShell):
 node --test bridge/ tests/js/                                                          # bridge relay + extension page logic
 ```
 
-- `tests/RunTests.ahk` runs `tests/Test*.ahk`: the fullscreen rules (`Decide`), the fullscreen state machine (`FsMachine`) and the Lossless policy.
+- `tests/RunTests.ahk` runs `tests/Test*.ahk`: the fullscreen rules (`Decide`), the fullscreen state machine (`FsMachine`), the Lossless policy, the monitor geometry, and end-to-end scenarios of the video glue (`StateEngine.ahk` + `Video.ahk`) against a fake Chrome/keyboard (`VideoEnv`) — auto-fullscreen, manual exits, `b`/click exits, Lossless on/off and hold-back, typing, the leveler keys.
 - `bridge/bridge.test.mjs` covers the token/origin checks, relaying, config hand-off and the one-extension rule; `tests/js/pageLogic.test.js` covers the extension's pure page helpers.
 - Results of the hands-on checks (F19 activation, Lossless detection, hotkey responsiveness, per-site behaviour) are in `docs/windows-checks.md`.
 
@@ -117,7 +118,8 @@ All user-specific values live in `Config.ahk`:
 | `TIMER_ACTIVE` / `TIMER_IDLE` | Main tick interval (ms) while media is/isn't active |
 | `LOSSLESS_HOTKEY` | Key sent to toggle Lossless Scaling |
 | `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
-| `PAGE_LEVELER` | The in-page loudness leveler: on/off, target level, max boost/cut, averaging time, silence and limiter levels |
+| `PAGE_LEVELER` | The in-page loudness leveler: on/off, default target level, max boost/cut, averaging time, silence and limiter levels |
+| `LEVEL_STEP_DB` / `LEVEL_MIN_DB` / `LEVEL_MAX_DB` | How far `-`/`=` move the target per press, and its limits |
 
 ## ⚠️ This is a personal config, not a general-purpose tool
 

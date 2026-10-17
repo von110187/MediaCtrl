@@ -142,3 +142,14 @@ Douyin: a tap of `d` or Right seeks as before; holding either plays at 2×
 - **Clock on Chrome's monitor:** still in its usual spot ✓.
 - **On-screen speed label:** built and shown working, then removed at the
   user's request ("quite useless").
+
+## 11. Leveler keys, fallback leveler removed, glue refactor — 2026-10-17: PASS
+
+- `-` / `=` in video mode: tooltip shows the level, all video sound follows
+  within about a second, Spotify unaffected, and the level survives an AHK
+  reload ✓.
+- After routing the video glue through `VideoEnv` (for the new glue tests)
+  and removing the WASAPI fallback leveler: YouTube auto-fullscreen with
+  Lossless on, Esc exits with Lossless off, w/a/s/d, e/q and 1–5 unchanged ✓.
+  Chrome's per-app volume in the Windows mixer was confirmed at 100 % before
+  the old leveler was removed.

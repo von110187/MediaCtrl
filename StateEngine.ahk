@@ -107,7 +107,10 @@ global VideoEnv := {
     losslessActive: (*) => _LosslessActive(_ChromeMonitor()),
     clock:          (*) => UpdateClockVisibility(),
     setHotkeys:     (env, on) => _ApplyVideoHotkeys(on),
+    notify:         (env, text) => (ToolTip(text, , , 2), SetTimer(() => ToolTip(, , , 2), -1200)),
+    saveLevel:      (env, db) => IniWrite(db, VIDEO_SETTINGS_FILE, "leveler", "targetDb"),
 }
+VIDEO_SETTINGS_FILE := A_ScriptDir . "\mediactrl_settings.ini"
 
 _ForegroundProcessName() {
     try return WinGetProcessName("A")
@@ -115,7 +118,8 @@ _ForegroundProcessName() {
 }
 
 VideoStart() {
-    global CONFIG
+    global CONFIG, State
+    try State.levelDb := Number(IniRead(VIDEO_SETTINGS_FILE, "leveler", "targetDb"))
     SetTimer(_VideoTick, CONFIG.TICK_MS)
 
     ; foreground changes (incl. fullscreen apps) arrive at once, not on the next tick
@@ -344,7 +348,7 @@ OnBridgeMessage(msg) {
             return
         case "extConnected":
             ; (re)connected to the bridge, or the extension came or went
-            VideoEnv.bridgeSend({type: "config", sites: CONFIG.SITES, leveler: CONFIG.PAGE_LEVELER})
+            _SendVideoConfig()
             _BridgeLogAdd(msg.type, msg.connected ? "yes" : "no")
             VideoEvaluate(false)
         case "state":
@@ -378,6 +382,28 @@ _BridgeLogAdd(type, detail := "") {
     State.bridgeLog.Push(FormatTime(, "HH:mm:ss") . "  " . type . (detail != "" ? "  " . SubStr(detail, 1, 50) : ""))
     if State.bridgeLog.Length > 30
         State.bridgeLog.RemoveAt(1)
+}
+
+; The extension's settings: the sites, and the page leveler with the target
+; the - / = keys set (Config.ahk's PAGE_LEVELER is left as the default)
+_SendVideoConfig() {
+    global CONFIG, State
+    leveler := CONFIG.PAGE_LEVELER.Clone()
+    leveler.targetDb := State.levelDb
+    VideoEnv.bridgeSend({type: "config", sites: CONFIG.SITES, leveler: leveler})
+}
+
+; - / = : every video's loudness one step down / up (steps = -1 / +1)
+VideoLevelStep(steps) {
+    global CONFIG, State
+    db := Max(CONFIG.LEVEL_MIN_DB, Min(CONFIG.LEVEL_MAX_DB, State.levelDb + steps * CONFIG.LEVEL_STEP_DB))
+    if db != State.levelDb {
+        State.levelDb := db
+        VideoEnv.saveLevel(db)
+        _SendVideoConfig()
+    }
+    limit := db == CONFIG.LEVEL_MAX_DB ? " (max)" : db == CONFIG.LEVEL_MIN_DB ? " (min)" : ""
+    VideoEnv.notify("Video level: " . db . " dB" . limit)
 }
 
 ; ── Public ────────────────────────────────────────────────────────────────────

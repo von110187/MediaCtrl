@@ -40,6 +40,8 @@ VIDEO_KEYS := Map(
     "$e",   _HK_e,     ; e / q — skip ±CONFIG.SEEK_SECONDS
     "$q",   _HK_q,
     "$Esc", _HK_Esc,   ; toggle fullscreen
+    "$-",   _HK_LevelDown,  ; - / = — every video quieter / louder (page leveler)
+    "$=",   _HK_LevelUp,
     "$F1",  _HK_Lossless,  ; F1 F2 F3 — Lossless Scaling passthrough
     "$F2",  _HK_Lossless,
     "$F3",  _HK_Lossless,
@@ -116,6 +118,9 @@ _HK_Speed(hk) {
 }
 
 _HK_Esc(*) => _VideoToggleFullscreen()
+
+_HK_LevelDown(*) => VideoLevelStep(-1)
+_HK_LevelUp(*) => VideoLevelStep(1)
 
 ; A manual press during a fullscreen video hands Lossless Scaling for that
 ; page to the user (Lib/LosslessPolicy.ahk).

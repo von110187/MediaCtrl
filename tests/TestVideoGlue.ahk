@@ -18,6 +18,7 @@ class FakeEnv {
         this.t := 100000, this.fg := "chrome.exe", this.hwnd := 1
         this.keys := [], this.msgs := [], this.timers := Map()
         this.hotkeysOn := false, this.ls := false, this.isConnected := true
+        this.notice := "", this.savedLevel := ""
     }
     now() => this.t
     foreground() => this.hwnd
@@ -34,6 +35,8 @@ class FakeEnv {
     losslessActive() => this.ls
     clock() => ""
     setHotkeys(on) => this.hotkeysOn := on
+    notify(text) => this.notice := text
+    saveLevel(db) => this.savedLevel := db
 
     ; move the fake clock and run the timers that came due
     Advance(ms) {
@@ -69,6 +72,7 @@ GlueSetup() {
     State.lastFsState := "normal", State.pendingExit := false, State.lastGaveUp := ""
     State.foregroundHwnd := 1, State.chromeHwnd := 1, State.videoHotkeys := false
     State.monitorVideo := true, State.bridgeLog := [], State.currentProgram := "chrome.exe"
+    State.levelDb := -20
     return VideoEnv
 }
 
@@ -251,6 +255,42 @@ Test_glue_manual_lossless_press() {
     Assert(!env.ls && !State.lossless.on, "turned off by hand")
 }
 
+; - / = move the page leveler's target; the extension gets it in a config
+LastConfig(env) {
+    loop env.msgs.Length
+        if env.msgs[env.msgs.Length - A_Index + 1].type == "config"
+            return env.msgs[env.msgs.Length - A_Index + 1]
+    return ""
+}
+
+Test_glue_level_keys_move_the_target() {
+    env := GlueSetup()
+    _HK_LevelUp()
+    Assert(State.levelDb == -20 + CONFIG.LEVEL_STEP_DB)
+    Assert(LastConfig(env).leveler.targetDb == State.levelDb, "sent to the extension")
+    Assert(env.savedLevel == State.levelDb, "remembered")
+    Assert(InStr(env.notice, State.levelDb), "shown")
+    _HK_LevelDown(), _HK_LevelDown()
+    Assert(State.levelDb == -20 - CONFIG.LEVEL_STEP_DB)
+    Assert(CONFIG.PAGE_LEVELER.targetDb == -20, "Config.ahk's default untouched")
+}
+
+Test_glue_level_keys_stop_at_the_limits() {
+    env := GlueSetup()
+    State.levelDb := CONFIG.LEVEL_MAX_DB
+    _HK_LevelUp()
+    Assert(State.levelDb == CONFIG.LEVEL_MAX_DB)
+    Assert(LastConfig(env) == "", "nothing to send")
+    Assert(InStr(env.notice, "max"))
+}
+
+Test_glue_config_on_connect_uses_current_level() {
+    env := GlueSetup()
+    State.levelDb := -14
+    OnBridgeMessage({type: "extConnected", connected: 1})
+    Assert(LastConfig(env).leveler.targetDb == -14)
+}
+
 TESTS.Push(Test_glue_playing_ready_arms_and_presses_f19, Test_glue_no_f19_into_another_app
     , Test_glue_fullscreen_turns_lossless_on_and_keys_on, Test_glue_esc_exits_lossless_off_and_stays_out
     , Test_glue_pause_then_play_reenters_after_manual_exit, Test_glue_site_button_exit_counts_as_manual
@@ -258,4 +298,6 @@ TESTS.Push(Test_glue_playing_ready_arms_and_presses_f19, Test_glue_no_f19_into_a
     , Test_glue_b_exits_anyway_if_the_site_never_pauses, Test_glue_video_click_exits_after_pause
     , Test_glue_retry_uses_fskey_but_not_while_typing, Test_glue_reload_mid_fullscreen_no_lossless_toggle
     , Test_glue_lossless_waits_for_chrome, Test_glue_typing_and_disconnect_turn_keys_off
-    , Test_glue_seek_and_speed_keys, Test_glue_manual_lossless_press)
+    , Test_glue_seek_and_speed_keys, Test_glue_manual_lossless_press
+    , Test_glue_level_keys_move_the_target, Test_glue_level_keys_stop_at_the_limits
+    , Test_glue_config_on_connect_uses_current_level)

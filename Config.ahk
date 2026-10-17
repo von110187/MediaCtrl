@@ -68,6 +68,11 @@ global CONFIG := {
         silenceDb:  -50,
         limiterDb:  -3,
     },
+    ; - / = in video mode move targetDb by this much, within these limits; the
+    ; level you pick is remembered in mediactrl_settings.ini (gitignored)
+    LEVEL_STEP_DB: 2,
+    LEVEL_MIN_DB:  -40,
+    LEVEL_MAX_DB:  -6,
 
     ; Game process names (without .exe)
     GAME_LIST: ["ZenlessZoneZero"],

@@ -20,6 +20,8 @@ global State := {
     foregroundHwnd: 0,       ; last foreground window seen by the shell hook / tick
     chromeHwnd:     0,       ; last Chrome window that was foreground (its monitor)
 
+    levelDb: CONFIG.PAGE_LEVELER.targetDb,  ; page leveler target, moved by - / = (VideoStart loads the saved one)
+
     videoHotkeys: false,  ; gate for b w a s d right 0 1 2 3 4 5 e q esc f1 f2 f3
 
     monitorVideo: true,  ; F7 toggle
