@@ -1,8 +1,8 @@
 ; ============ VIDEO STATE RULES ============
 ; Pure module: no Send/WinActive/COM calls, so tests/RunTests.ahk can test it.
 ; Given a snapshot of inputs, decides whether to enter/exit fullscreen and
-; whether the video-mode keys should be on. Port of
-; reference/hammerspoon/decide.lua — keep the two in step.
+; whether the video-mode keys should be on. Same rules as the Mac version
+; of MediaCtrl, which this was ported from.
 
 class Decide {
     ; consecutive ticks a page must look "not playable" before we treat it as

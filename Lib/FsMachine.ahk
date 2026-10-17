@@ -3,7 +3,7 @@
 ; Never assumes a request worked — only the extension's fullscreen reports
 ; move the state to "fullscreen" / "normal". Each request gets one retry,
 ; then gives up and falls back to whatever the page last reported.
-; Port of reference/hammerspoon/fsmachine.lua — keep the two in step.
+; Same machine as the Mac version of MediaCtrl, which this was ported from.
 
 class FsMachine {
     static CONFIRM_MS := 1000

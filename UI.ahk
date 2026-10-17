@@ -3,7 +3,7 @@
 ; (fullscreen hides Windows' taskbar clock).
 ;
 ; +E0x20 = WS_EX_TRANSPARENT so clicks pass through to the browser and never
-; interfere with the extension's click-to-exit. Gui's BackColor is a magenta
+; interfere with the extension's click-to-exit. Gui's BackColor is a black
 ; color-key that WinSetTransColor makes fully transparent, so only the text
 ; floats over the video.
 ;
@@ -42,9 +42,9 @@ InitClockOverlay() {
     ClockGui.Hide()
 }
 
-; Called directly from StateEngine.ahk's _NotifyFullscreen for zero-delay
-; show/hide. The SetTimer-driven
-; UpdateClockOverlay() below is a once-a-second safety net, not the primary trigger.
+; Called from StateEngine.ahk's _NotifyFullscreen (via VideoEnv.clock) the
+; moment fullscreen starts or ends. UpdateClockOverlay() below runs once a
+; second to keep the time current and as a safety net.
 UpdateClockVisibility() {
     global ClockGui, ClockTextCtrl, State, _clockShown
     global CLOCK_W, CLOCK_MARGIN_RIGHT, CLOCK_MARGIN_TOP
@@ -74,8 +74,8 @@ UpdateClockOverlay() {
 }
 
 ; ============ TOOLTIP ============
-; F6: one line per thing worth checking; problems (gave up, waiting for the
-; player, volume errors) only appear when they happen. Early exit when off.
+; F6: one line per thing worth checking; problems (not connected, gave up,
+; waiting for the player) only appear when they happen. Early exit when off.
 
 ShowTooltip() {
     global State, CONFIG

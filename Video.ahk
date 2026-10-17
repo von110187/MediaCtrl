@@ -126,13 +126,13 @@ _HK_Esc(*) => _VideoToggleFullscreen()
 _HK_LevelDown(*) => VideoLevelStep(-1)
 _HK_LevelUp(*) => VideoLevelStep(1)
 
-; A manual press during a fullscreen video hands Lossless Scaling for that
-; page to the user (Lib/LosslessPolicy.ahk).
+; F1/F2/F3 toggle Lossless Scaling by hand; the policy flips its tracked state
+; so the next automatic change still goes the right way (Lib/LosslessPolicy.ahk).
 _HK_Lossless(*) {
     global State
     if !SETTINGS.lossless.enabled || !_ChromeFocused()
         return
-    LosslessPolicy.OnManualPress(State.lossless, State.machine.state, _PageId())
+    LosslessPolicy.OnManualPress(State.lossless)
     State.losslessSentAt := VideoEnv.now()
     VideoEnv.send(SETTINGS.lossless.hotkey)
 }

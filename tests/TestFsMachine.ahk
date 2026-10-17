@@ -1,4 +1,5 @@
-; Ported from reference/tests/test_fsmachine.lua: same names, same assertions.
+; Lib/FsMachine.ahk: fullscreen requests, confirmations, retries and adoption.
+; Same cases as the Mac version's tests.
 
 ; a machine that has seen one report, so it is past the "fresh" adopt step
 Seen(isFullscreen) {

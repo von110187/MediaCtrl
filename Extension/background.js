@@ -1,8 +1,8 @@
 // ── WebSocket to the MediaCtrl bridge (bridge/bridge.js) ─────────────────────
 // Only the active tab of the focused Chrome window talks to AHK: its state is
 // forwarded, and every command is routed to it.
-// The bridge routes per client, so (unlike the Mac's hs.httpserver) another
-// local client can't take over this channel; there is no push counting.
+// The bridge keeps one connection per role, so no other local client can
+// take over this channel.
 
 let ws = null;
 let token = "";
