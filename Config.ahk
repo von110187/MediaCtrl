@@ -8,9 +8,6 @@ global CONFIG := {
     SONG:    "spotify",
     BROWSER: "chrome",
 
-    ; win32 window class shared by all Chromium browsers
-    BROWSER_WINDOW_CLASS: "Chrome_WidgetWin_1",
-
     ; native Spotify app — process name, used to activate (or launch) it
     ; when no SMTC session exists yet
     SONG_EXE: "Spotify.exe",
@@ -20,15 +17,8 @@ global CONFIG := {
     ; e.g. a portable/manual install with no registry entry.
     SONG_EXE_PATH: "C:\Users\87\AppData\Roaming\Spotify\Spotify.exe",
 
-    ; consecutive not-playing ticks before treating the song browser as stopped
-    BROWSER_STOP_DEBOUNCE: 1,
-
-    ; consecutive ticks the URL must be missing from playingTabs before Gate 2
-    ; treats the tab as left — absorbs brief <video> drops during feed re-renders
-    ; (Douyin) without triggering a real exit-fullscreen keystroke
-    URL_MISS_DEBOUNCE: 3,
-
-    ; Lossless Scaling hotkey
+    ; Lossless Scaling hotkey — toggles scaling for the foreground window, so
+    ; it's only ever sent while Chrome is foreground
     LOSSLESS_HOTKEY: "{F1}",
 
     ; bridge/bridge.js WebSocket port (127.0.0.1 only)
@@ -47,16 +37,28 @@ global CONFIG := {
     VOLUME_LEVELER_STEP:      0.1,   ; max volume-multiplier change per sample
     VOLUME_LEVELER_MIN:       0.3,   ; never attenuate below this multiplier
 
-    ; fsKey — fullscreen toggle key; mouseCenter — center mouse before entering FS;
-    ; startupDelay/sleepMs — wait for player on first visit; holdSeek — hold Right
-    ; to seek (Bilibili/Douyin style); iframePlayer — player is cross-origin, content
-    ; script can't see into it
+    ; ── Video sites ─────────────────────────────────────────────────────────
+    ; Sent to the Chrome extension on connect (config message), so this is the
+    ; only place site settings live.
+    ; match — domain (and its subdomains); fsButton — the site's own fullscreen
+    ; button, clicked during the F19 nudge; playerSelector — the real player
+    ; container (requestFullscreen fallback, and how hover previews are told
+    ; apart from the real video); fsKey — last-resort key; holdSeek — hold d to
+    ; hold Right (Bilibili/Douyin style seeking)
+    ; Douyin: no playerSelector — its feed mounts several players, so the
+    ; active video is found by which one is actually playing. Its other button,
+    ; .xgplayer-page-full-screen, is window-only "web fullscreen" that the
+    ; browser doesn't report, so it isn't used.
     SITES: {
-        youtube:  { url: "youtube.com",  fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 100,  holdSeek: false, iframePlayer: false },
-        bilibili: { url: "bilibili.com", fsKey: "f", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        douyin:   { url: "douyin.com",   fsKey: "h", mouseCenter: false, startupDelay: true,  sleepMs: 1500, holdSeek: true,  iframePlayer: false },
-        anime:    { url: "cycani.org",   fsKey: "f", mouseCenter: true,  startupDelay: false, sleepMs: 0,    holdSeek: false, iframePlayer: true },
+        youtube:  { match: "youtube.com",  fsButton: ".ytp-fullscreen-button", playerSelector: "#movie_player",         fsKey: "f", holdSeek: false },
+        bilibili: { match: "bilibili.com", fsButton: ".bpx-player-ctrl-full",  playerSelector: ".bpx-player-container", fsKey: "f", holdSeek: true },
+        douyin:   { match: "douyin.com",   fsButton: ".xgplayer-fullscreen",   playerSelector: "",                      fsKey: "h", holdSeek: true },
     },
+
+    TICK_MS:            250,    ; video evaluation timer
+    SEEK_SECONDS:       87,     ; e / q jump size
+    SPEEDS:             [1.0, 1.5, 2.0, 3.0],  ; keys 1 2 3 4
+    CLICK_EXIT_WAIT_MS: 500,    ; b / video click: exit after the site's pause, at most this long
 
     ; Game process names (without .exe)
     GAME_LIST: ["ZenlessZoneZero"],

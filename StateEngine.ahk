@@ -1,6 +1,9 @@
 ; ============ STATE ENGINE ============
-; Single entry point for all state mutations — monitors pass their session
-; snapshot here and never act directly.
+; Program/Spotify state from the main tick, and the video glue: the
+; extension's page reports (via BridgeClient.ahk) feed the pure rules
+; (Lib/Decide.ahk), the fullscreen state machine (Lib/FsMachine.ahk) and the
+; Lossless Scaling policy (Lib/LosslessPolicy.ahk); this file carries out what
+; they decide. Port of reference/hammerspoon/video.lua.
 
 UpdateState(sessions) {
     global State
@@ -8,8 +11,7 @@ UpdateState(sessions) {
 
     try {
         _UpdateProgramState()
-        _UpdateUrlState()
-        _UpdateMediaState(sessions)
+        _UpdateSongState(sessions)
         _UpdateAdaptiveTimer()
     } catch as err {
         ; Swallow COM errors during session churn — next tick recovers
@@ -38,7 +40,7 @@ _OnProgramChanged() {
     if (State.activeSpeaker = "Harman Kardon")
         _UpdateHarmanBass()
 
-    _EvalVideoHotkeys()
+    VideoEvaluate(false)
 }
 
 _UpdateHarmanBass() {
@@ -54,300 +56,26 @@ _UpdateHarmanBass() {
     _SetBass(shouldOn)
 }
 
-; ── URL state from bridge ─────────────────────────────────────────────────────
+; ── Spotify session state ─────────────────────────────────────────────────────
+; Browser playback comes from the extension (State.page.playing), not SMTC.
 
-_UpdateUrlState() {
-    global State
-
-    urlFile        := A_Temp . "\ahk_current_url.txt"
-    tabsFile       := A_Temp . "\ahk_playing_tabs.txt"
-    cor5File       := A_Temp . "\ahk_cor5_href.txt"
-    extPlayingFile := A_Temp . "\ahk_ext_playing.txt"
-
-    try {
-        newUrl := Trim(FileRead(urlFile))
-    } catch {
-        newUrl := State.currentUrl
-    }
-
-    try {
-        raw  := Trim(FileRead(tabsFile))
-        newPlayingTabs := []
-        if raw != "" {
-            for entry in StrSplit(raw, "`n") {
-                pipePos := InStr(entry, "|")  ; "tabId|url"
-                newPlayingTabs.Push(pipePos ? SubStr(entry, pipePos + 1) : entry)
-            }
-        }
-        ; Prune seen-tab cache for tabs no longer playable. Compares base
-        ; path, not the bidirectional InStr Gate 2 uses (that matched any
-        ; two videos on the same domain, so entries never got pruned).
-        ; Requires a few consecutive misses first to absorb DOM blips.
-        toForget := []
-        for seenUrl in State.startupDelaySeen {
-            stillPresent := false
-            for tabUrl in newPlayingTabs {
-                if _UrlBasePath(seenUrl) = _UrlBasePath(tabUrl) {
-                    stillPresent := true
-                    break
-                }
-            }
-            if stillPresent {
-                if State.startupDelayMissCount.Has(seenUrl)
-                    State.startupDelayMissCount.Delete(seenUrl)
-            } else {
-                misses := State.startupDelayMissCount.Has(seenUrl) ? State.startupDelayMissCount[seenUrl] : 0
-                misses += 1
-                if misses >= 3 {
-                    toForget.Push(seenUrl)
-                } else {
-                    State.startupDelayMissCount[seenUrl] := misses
-                }
-            }
-        }
-        for seenUrl in toForget {
-            State.startupDelaySeen.Delete(seenUrl)
-            State.startupDelayMissCount.Delete(seenUrl)
-        }
-
-        ; synthesize iframe-player sites into playingTabs — content script
-        ; can't detect their video (cross-origin iframe)
-        matchedSite := _FindMatchedSite(newUrl)
-        if matchedSite && matchedSite.iframePlayer && newUrl != "" {
-            alreadyIn := false
-            for tabUrl in newPlayingTabs {
-                if tabUrl = newUrl {
-                    alreadyIn := true
-                    break
-                }
-            }
-            if !alreadyIn
-                newPlayingTabs.Push(newUrl)
-        }
-
-        State.playingTabs := newPlayingTabs
-    } catch as err {
-        try FileAppend(A_Now . " _UpdateUrlState failed: " . err.Message . " (playingTabs kept at " . State.playingTabs.Length . ")`n", A_Temp . "\ahk_urlstate_errors.log")
-        ; keep last known
-    }
-
-    try {
-        State.cor5Href := Trim(FileRead(cor5File))
-    } catch {
-        ; keep last known
-    }
-
-    try {
-        State.extPlaying := Trim(FileRead(extPlayingFile)) = "1"
-    } catch {
-        ; keep last known
-    }
-
-    State.currentUrl  := newUrl
-    State.matchedSite := _FindMatchedSite(newUrl)
-    _EvalVideoHotkeys()
-}
-
-_FindMatchedSite(url) {
-    global CONFIG
-    for name, site in CONFIG.SITES.OwnProps() {
-        if InStr(url, site.url)
-            return site
-    }
-    return ""
-}
-
-; Strips query string and fragment so ?spm_id_from=/&seid=/timestamp params
-; that Bilibili/Douyin mutate mid-playback don't make an ongoing watch look
-; like a new URL. This is intentionally narrower than Gate 2's bidirectional
-; InStr: two DIFFERENT videos on the same site share a long common URL
-; prefix (https://www.bilibili.com/video/), so that leniency was collapsing
-; every video on a domain into "already seen" after the first one — the
-; startup delay stopped firing for any subsequent video after the first.
-; Base-path equality avoids that while still tolerating real query drift.
-_UrlBasePath(url) {
-    noFragment := StrSplit(url, "#")[1]
-    return StrSplit(noFragment, "?")[1]
-}
-
-_UrlSeenForDelay(url) {
-    global State
-    base := _UrlBasePath(url)
-    for seenUrl in State.startupDelaySeen {
-        if base = _UrlBasePath(seenUrl)
-            return true
-    }
-    return false
-}
-
-; ── Media session state ───────────────────────────────────────────────────────
-
-_UpdateMediaState(sessions) {
+_UpdateSongState(sessions) {
     global State, CONFIG
-
-    newBrowserIsPlaying  := false
-    newSongIsPlaying := false
-    newBrowserStatus := 0
-
+    playing := false
     for session in sessions {
-        rawId := session.SourceAppUserModelId
-        if InStr(rawId, CONFIG.BROWSER) {
-            newBrowserStatus     := session.PlaybackStatus
-            newBrowserIsPlaying  := newBrowserStatus = 4
-        } else if InStr(rawId, CONFIG.SONG)
-            newSongIsPlaying := session.PlaybackStatus = 4
+        if InStr(session.SourceAppUserModelId, CONFIG.SONG)
+            playing := session.PlaybackStatus = 4
     }
-
-    State.browserPlaybackStatus := newBrowserStatus
-
-    ; Windows' SMTC status for the browser is the browser's own guess about
-    ; which <video> backs the OS media session — unreliable when the tracked
-    ; element changes (e.g. Douyin swapping <video> on scroll can leave it
-    ; stuck reporting "paused"). extPlaying (extension's direct DOM
-    ; observation) exists for this; OR it in if either source says "playing".
-    ;
-    ; Applies unconditionally, including while pendingExitFS is armed. An
-    ; earlier version used raw SMTC in that window instead, reasoning it
-    ; reacts faster to a genuine pause than extPlaying's round trip — but
-    ; that let ANY click anywhere on the page look like "stopped" and trigger
-    ; an exit, since raw SMTC can already be stale regardless of what was
-    ; clicked. Reliability wins over shaving off latency here.
-    if State.matchedSite && !State.matchedSite.iframePlayer
-        newBrowserIsPlaying := newBrowserIsPlaying || State.extPlaying
-
-    if newBrowserIsPlaying {
-        ; commit immediately, no debounce needed
-        State.browserNotPlayingTicks := 0
-        if !State.browserIsPlaying {
-            State.browserIsPlaying := true
-            _EvalVideoHotkeys()
-        }
-    } else {
-        ; only commit after BROWSER_STOP_DEBOUNCE consecutive ticks
-        State.browserNotPlayingTicks += 1
-        if State.browserIsPlaying && State.browserNotPlayingTicks >= CONFIG.BROWSER_STOP_DEBOUNCE {
-            State.browserIsPlaying := false
-            ; F5 refresh: audio stopped because page is reloading — unblock re-entry
-            if State.pendingF5 {
-                State.pendingF5        := false
-                State.manuallyExitedFS := false
-            }
-            _EvalVideoHotkeys()
-        }
-    }
-
-    State.songIsPlaying := newSongIsPlaying
-}
-
-; ── Video hotkey evaluation ───────────────────────────────────────────────────
-; Rules:
-;   1. Not browser, not matched site, or not in playable tabs → disable (exit FS if needed)
-;   2. browser + matched + playing + not FS + user manually exited → keep hotkeys ON, no re-enter
-;   3. browser + matched + playing + not FS + not manually exited → enter FS + hotkeys ON
-;   4. browser + matched + playing + in FS → hotkeys ON
-;   5. browser + matched + not playing + not FS → hotkeys OFF; also clear manuallyExitedFS
-;   6. browser + matched + not playing + in FS → keep hotkeys ON (user paused mid-watch)
-
-_EvalVideoHotkeys() {
-    global State, CONFIG
-
-    if !State.monitorVideo {
-        _SetVideoHotkeys(false)
-        return
-    }
-
-    prog     := State.currentProgram
-    site     := State.matchedSite
-    inBrowser := InStr(prog, CONFIG.BROWSER)
-
-    ; Gate 1 — must be song browser on a matched site
-    if !inBrowser || !site {
-        ; user Alt+Tabbed away — never auto-exit fullscreen here, only
-        ; user-initiated hotkeys should do that
-        if State.browserInFullScreen {
-            _SetVideoHotkeys(false)
-            return
-        }
-        _SetVideoHotkeys(false)
-        State.manuallyExitedFS := false
-        State.pendingExitFS    := false
-        return
-    }
-
-    ; Gate 2 — current URL must be a playable tab (has media element)
-    ; Skip for iframe-player sites — content script can't see into cross-origin iframes
-    urlInPlayable := site.iframePlayer
-    if !urlInPlayable {
-        for tabUrl in State.playingTabs {
-            if (State.currentUrl = tabUrl) || InStr(State.currentUrl, tabUrl) || InStr(tabUrl, State.currentUrl) {
-                urlInPlayable := true
-                break
-            }
-        }
-    }
-
-    if urlInPlayable {
-        State.urlNotPlayableTicks := 0
-    } else {
-        ; debounce — a single tick's DOM blip (e.g. Douyin swapping its
-        ; <video> mid-feed) shouldn't read as "left the video"; a false exit
-        ; can desync fullscreen state until the page is reloaded
-        State.urlNotPlayableTicks += 1
-        if State.urlNotPlayableTicks < CONFIG.URL_MISS_DEBOUNCE
-            return  ; grace period
-    }
-
-    if !urlInPlayable {
-        if State.browserInFullScreen
-            _ExitFullscreen()
-        _SetVideoHotkeys(false)
-        State.manuallyExitedFS := false
-        State.pendingExitFS    := false
-        return
-    }
-
-    ; ── We are on a valid playable tab in browser ──────────────────────────────
-    if State.browserIsPlaying {
-        if State.browserInFullScreen {
-            ; Playing in fullscreen — normal, hotkeys on
-            _SetVideoHotkeys(true)
-        } else if State.manuallyExitedFS {
-            ; User manually exited FS while playing — keep hotkeys on, don't re-enter
-            _SetVideoHotkeys(true)
-        } else {
-            ; Playing but not in FS and didn't manually exit — auto-enter fullscreen
-            _EnterFullscreen()
-        }
-    } else {
-        ; Audio stopped — check if exit was deferred
-        if State.pendingExitFS {
-            State.pendingExitFS := false
-            if State.browserInFullScreen
-                _ExitFullscreenByUser()
-            return
-        }
-        if State.browserInFullScreen {
-            ; Paused while in FS — keep hotkeys on so user can interact
-            _SetVideoHotkeys(true)
-        } else {
-            ; Not playing, not in FS — done, disable hotkeys and reset flag
-            _SetVideoHotkeys(false)
-            State.manuallyExitedFS := false
-        }
-    }
+    State.songIsPlaying := playing
 }
 
 ; ── Adaptive timer ────────────────────────────────────────────────────────────
-; Mirrors the same "OR" trust model as _UpdateMediaState: raw SMTC status
-; alone can get stuck stale (see notes there), so also fold in extPlaying/
-; songIsPlaying — otherwise the poll rate stays parked at TIMER_IDLE while
-; a real video is playing, which is what made the URL/tabs/extPlaying files
-; (and therefore fullscreen/hotkey reactions) feel laggy.
+; Tightens the main tick (Spotify outro check) while anything is playing.
 
 _UpdateAdaptiveTimer() {
     global State, CONFIG
 
-    anyActive := State.extPlaying || State.songIsPlaying
+    anyActive := State.songIsPlaying || (State.page && State.page.playing)
     if !anyActive {
         for session in State.sessions {
             if session.PlaybackStatus = 4 {
@@ -364,82 +92,279 @@ _UpdateAdaptiveTimer() {
     }
 }
 
-; ── Internal fullscreen helpers ───────────────────────────────────────────────
+; ============ VIDEO ============
 
-_EnterFullscreen() {
-    global State, CONFIG
-    site := State.matchedSite
-    if !site || State.browserInFullScreen
-        return
+VideoStart() {
+    global CONFIG
+    SetTimer(_VideoTick, CONFIG.TICK_MS)
 
-    if site.mouseCenter
-        MouseMove(4000, A_ScreenHeight/2)
-
-    ; mark entering fullscreen before any sleep, to prevent re-entry if the
-    ; polling timer fires mid-sleep during the startup delay
-    State.browserInFullScreen := true
-    State.manuallyExitedFS   := false
-    _SetVideoHotkeys(true)
-    UpdateClockVisibility()  ; show now, before the startup-delay Sleep below
-
-    if site.startupDelay {
-        if !_UrlSeenForDelay(State.currentUrl) {
-            State.startupDelaySeen.Set(State.currentUrl, true)
-            Sleep(site.sleepMs)
-        }
-    }
-
-    Send(CONFIG.LOSSLESS_HOTKEY)
-    Send(site.fsKey)
+    ; foreground changes (incl. fullscreen apps) arrive at once, not on the next tick
+    DllCall("RegisterShellHookWindow", "ptr", A_ScriptHwnd)
+    OnMessage(DllCall("RegisterWindowMessage", "str", "SHELLHOOK", "uint"), _OnShellHook)
 }
 
-; Called by user hotkeys (b, Esc, LButton, F8, ~^w, F7).
-; Sets manuallyExitedFS so _EvalVideoHotkeys won't auto re-enter.
-_ExitFullscreenByUser() {
-    global State, CONFIG
-    site := State.matchedSite
-    if !site || !State.browserInFullScreen
-        return
-
-    if site.mouseCenter
-        MouseMove(A_ScreenWidth/2, A_ScreenHeight/2)
-
-    Send(CONFIG.LOSSLESS_HOTKEY)
-    Send(site.fsKey)
-    State.browserInFullScreen := false
-    State.manuallyExitedFS   := true  ; tell eval not to re-enter
-    UpdateClockVisibility()
-    _EvalVideoHotkeys()
-}
-
-; Called automatically (program switch, URL change, monitorVideo off).
-; Does NOT set manuallyExitedFS.
-_ExitFullscreen() {
-    global State, CONFIG
-    site := State.matchedSite
-    if !site || !State.browserInFullScreen
-        return
-
-    if site.mouseCenter
-        MouseMove(A_ScreenWidth/2, A_ScreenHeight/2)
-
-    Send(CONFIG.LOSSLESS_HOTKEY)
-    Send(site.fsKey)
-    State.browserInFullScreen := false
-    ; manuallyExitedFS stays as-is — _EvalVideoHotkeys will clear it if needed
-    UpdateClockVisibility()
-    _EvalVideoHotkeys()
-}
-
-; ── Hotkey toggles ────────────────────────────────────────────────────────────
-
-_SetVideoHotkeys(enable) {
+_VideoTick() {
     global State
-    if State.videoHotkeys = enable
+    _CheckForeground()
+    VideoEvaluate(true)
+    _VideoRun(FsMachine.Timeout(State.machine, A_TickCount))
+}
+
+_OnShellHook(wParam, lParam, *) {
+    if (wParam & 0x7FFF) = 4  ; HSHELL_WINDOWACTIVATED / HSHELL_RUDEAPPACTIVATED
+        SetTimer(_CheckForeground, -1)
+}
+
+; A Chrome window came to the front: have the extension report that window's
+; active tab (Chrome's own focus event isn't reliable), and apply a Lossless
+; change that was held back while Chrome wasn't foreground.
+_CheckForeground() {
+    global State
+    hwnd := WinExist("A")
+    if hwnd = State.foregroundHwnd
         return
-    State.videoHotkeys := enable
-    for key in ["$b", "$w", "$a", "$s", "$d", "$0", "$1", "$2", "$3", "$4", "$e", "$q", "$Esc", "$F1", "$F2", "$F3", "$F5"]
-        Hotkey(key, enable ? "On" : "Off")
+    State.foregroundHwnd := hwnd
+    _UpdateProgramState()
+    if _ChromeFocused() {
+        BridgeClient_Send({type: "refresh"})
+        _LosslessDetect()
+        _LosslessApply(LosslessPolicy.OnChromeForeground(State.lossless))
+    }
+    VideoEvaluate(false)
+}
+
+; "Chrome is foreground" means the foreground window's process is chrome.exe
+_ChromeFocused() {
+    try return WinGetProcessName("A") = "chrome.exe"
+    return false
+}
+
+; every key we send lands in Chrome or nowhere
+_SendToChrome(keys) {
+    if _ChromeFocused()
+        Send(keys)
+}
+
+_CurrentSite() {
+    global State, CONFIG
+    name := State.page ? State.page.site : ""
+    if name == "" || !CONFIG.SITES.HasOwnProp(name)
+        return ""
+    return CONFIG.SITES.%name%
+}
+
+_PageId() {
+    global State
+    return State.page ? State.page.pageId : ""
+}
+
+_VideoInputs() {
+    global State
+    p := State.page
+    return {
+        connected:       BridgeClient_Connected() && IsObject(p),
+        monitorOn:       State.monitorVideo,
+        chromeFocused:   _ChromeFocused(),
+        site:            p ? p.site : "",
+        playable:        p ? p.playable : false,
+        playing:         p ? p.playing : false,
+        ready:           p ? p.ready : false,
+        editableFocused: p ? p.editableFocused : false,
+        pageId:          p ? p.pageId : "",
+        fs:              State.machine.state,
+    }
+}
+
+VideoEvaluate(isTick) {
+    global State
+    actions := Decide.Evaluate(State.rules, _VideoInputs(), isTick)
+    _SetVideoHotkeys(actions.keys)
+    if actions.enter
+        _VideoRun(FsMachine.Request(State.machine, "enter", A_TickCount, _PageId()))
+    if actions.exit
+        _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+}
+
+_VideoRun(cmd) {
+    global State, CONFIG
+    switch cmd {
+        case "nudge":
+            BridgeClient_Send({type: "armFullscreen"})
+        case "exitCmd":
+            BridgeClient_Send({type: "exitFullscreen"})
+        case "fsKey":
+            ; only into the page the request was for, and never while typing
+            site := _CurrentSite()
+            p := State.page
+            if site && p.pageId == State.machine.pageId && !p.editableFocused
+                _SendToChrome(site.fsKey)
+        case "gaveUp":
+            State.lastGaveUp := FormatTime(, "HH:mm:ss")
+            _BridgeLogAdd("gaveUp", "no fullscreen confirmation")
+    }
+    _NotifyFullscreen()
+}
+
+; The machine settled somewhere new: clock and Lossless Scaling follow it.
+; adopted: the first report after an AHK reload put it there.
+_NotifyFullscreen(adopted := false) {
+    global State
+    fs := State.machine.state
+    if fs == State.lastFsState
+        return
+    State.lastFsState := fs
+    UpdateClockVisibility()
+    if fs == "fullscreen" || fs == "normal" {
+        _LosslessDetect()
+        _LosslessApply(LosslessPolicy.OnFullscreenChange(State.lossless, fs, _PageId(), _ChromeFocused(), adopted))
+    }
+}
+
+; Feed the observed scaling state in (Lib/LosslessDetect.ahk) — but not right
+; after we pressed the key: the overlay takes a moment to appear or go.
+_LosslessDetect() {
+    global State
+    if A_TickCount - State.losslessSentAt > 1500
+        LosslessPolicy.SetDetected(State.lossless, _LosslessActive())
+}
+
+_LosslessApply(action) {
+    global State, CONFIG
+    if action != "toggle"
+        return
+    State.losslessSentAt := A_TickCount
+    _SendToChrome(CONFIG.LOSSLESS_HOTKEY)
+}
+
+; user asked to leave fullscreen (Esc, b, click on the video): exit, and
+; don't auto re-enter until playback stops
+_VideoManualExit() {
+    global State
+    Decide.OnUnrequestedExit(State.rules, false, _PageId())
+    _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+}
+
+_VideoCancelPendingExit() {
+    global State
+    State.pendingExit := false
+    SetTimer(_VideoPendingExitTimeout, 0)
+}
+
+; b / click while playing: the site pauses first, then we exit. Sites that
+; don't pause (or a Space that got eaten) still exit after CLICK_EXIT_WAIT_MS,
+; so the flag can never linger and fire minutes later.
+_VideoExitAfterPause() {
+    global State, CONFIG
+    _VideoCancelPendingExit()
+    State.pendingExit := true
+    SetTimer(_VideoPendingExitTimeout, -CONFIG.CLICK_EXIT_WAIT_MS)
+}
+
+_VideoPendingExitTimeout() {
+    global State
+    if State.pendingExit {
+        State.pendingExit := false
+        _VideoManualExit()
+    }
+}
+
+_VideoToggleFullscreen() {
+    global State
+    if State.machine.state == "fullscreen" {
+        _VideoManualExit()
+    } else if State.machine.state == "normal" {
+        State.rules.manualExit := false
+        _VideoRun(FsMachine.Request(State.machine, "enter", A_TickCount, _PageId()))
+    }
+}
+
+; ── Messages from the extension ───────────────────────────────────────────────
+
+_VideoOnState(msg) {
+    global State
+    pageChanged := IsObject(State.page) && msg.pageId !== State.page.pageId
+    State.page := msg
+    fresh := State.machine.lastReported == ""
+    event := FsMachine.Report(State.machine, msg.isFullscreen, pageChanged, A_TickCount, msg.pageId)
+    if event == "unrequestedExit"
+        Decide.OnUnrequestedExit(State.rules, pageChanged, msg.pageId)
+    _NotifyFullscreen(fresh)
+
+    if pageChanged {
+        _VideoCancelPendingExit()
+    } else if State.pendingExit && !msg.playing {
+        _VideoCancelPendingExit()
+        _VideoManualExit()
+    }
+    VideoEvaluate(false)
+}
+
+; Called by BridgeClient.ahk for every message from the bridge.
+OnBridgeMessage(msg) {
+    global State, CONFIG
+    switch msg.type {
+        case "pong":
+            return
+        case "extConnected":
+            ; (re)connected to the bridge, or the extension came or went
+            BridgeClient_Send({type: "config", sites: CONFIG.SITES})
+            _BridgeLogAdd(msg.type, msg.connected ? "yes" : "no")
+            VideoEvaluate(false)
+        case "state":
+            _BridgeLogAdd(msg.type, msg.site . (msg.playing ? " ▶" : "") . (msg.isFullscreen ? " fs" : "") . (msg.editableFocused ? " typing" : ""))
+            _VideoOnState(msg)
+        case "armed":
+            _BridgeLogAdd(msg.type)
+            ; only for a real, current enter request on this page
+            p := State.page
+            if State.machine.state != "entering" || !p || msg.pageId !== p.pageId || msg.pageId !== State.machine.pageId
+                return
+            ; not from inside the socket callback
+            SetTimer(() => _SendToChrome("{F19}"), -1)
+        case "enterFailed":
+            _BridgeLogAdd(msg.type)
+            _VideoRun(FsMachine.EnterFailed(State.machine, A_TickCount))
+        case "videoClick":
+            _BridgeLogAdd(msg.type)
+            ; the site's own click handler pauses the video; exit once that lands
+            if State.machine.state == "fullscreen" && State.page && State.page.playing
+                _VideoExitAfterPause()
+        case "log":
+            _BridgeLogAdd(msg.type, msg.HasOwnProp("text") ? msg.text : "")
+        default:
+            _BridgeLogAdd(msg.type)
+    }
+}
+
+_BridgeLogAdd(type, detail := "") {
+    global State
+    State.bridgeLog.Push(FormatTime(, "HH:mm:ss") . "  " . type . (detail != "" ? "  " . SubStr(detail, 1, 50) : ""))
+    if State.bridgeLog.Length > 30
+        State.bridgeLog.RemoveAt(1)
+}
+
+; ── Public ────────────────────────────────────────────────────────────────────
+
+VideoSetMonitor(on) {
+    global State
+    State.monitorVideo := on
+    if !on && State.machine.state == "fullscreen"
+        _VideoRun(FsMachine.Request(State.machine, "exit", A_TickCount, _PageId()))
+    VideoEvaluate(false)
+}
+
+VideoStatus() {
+    global State
+    return {
+        page:       State.page,
+        fs:         State.machine.state,
+        manualExit: State.rules.manualExit,
+        keysOn:     State.videoHotkeys,
+        monitorOn:  State.monitorVideo,
+        connected:  BridgeClient_Connected(),
+        lastGaveUp: State.lastGaveUp,
+        lossless:   State.lossless,
+    }
 }
 
 ; ── Bass helpers ──────────────────────────────────────────────────────────────

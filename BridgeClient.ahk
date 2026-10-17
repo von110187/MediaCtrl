@@ -102,11 +102,3 @@ _BridgeClient_Ping() {
     }
     BridgeClient_Send({type: "ping"})
 }
-
-; stub until StateEngine.ahk takes over (Task 7)
-OnBridgeMessage(msg) {
-    global State
-    State.bridgeLog.Push(FormatTime(, "HH:mm:ss") . " " . msg.type)
-    if State.bridgeLog.Length > 30
-        State.bridgeLog.RemoveAt(1)
-}

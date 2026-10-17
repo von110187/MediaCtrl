@@ -6,43 +6,27 @@ global State := {
     currentInterval: 0,
 
     currentProgram: "",  ; active window process name
-    currentUrl: "",       ; current browser URL, pushed by extension via bridge
-    cor5Href: "",          ; next-episode href from <a class="cor5"> (or "")
-    playingTabs: [],        ; playable tabs reported by extension
-    matchedSite: "",         ; matched site config object (or "")
 
-    browserIsPlaying:      false,
-    browserPlaybackStatus: 0,      ; last known PlaybackStatus for the browser session
+    ; ── Video (StateEngine.ahk) ─────────────────────────────────────────────
+    page:     "",                    ; last "state" message from the extension ("" = none yet)
+    rules:    Decide.New(),          ; Lib/Decide.ahk state (manual exit, miss ticks)
+    machine:  FsMachine.New(),       ; Lib/FsMachine.ahk fullscreen state
+    lossless: LosslessPolicy.New(),  ; Lib/LosslessPolicy.ahk on/off tracking
+    losslessSentAt: 0,               ; TickCount of the last Lossless key we sent
 
-    ; debounce — consecutive not-playing ticks before committing the change (see BROWSER_STOP_DEBOUNCE)
-    browserNotPlayingTicks: 0,
-    browserInFullScreen: false,
+    lastFsState:  "normal",  ; machine.state last acted on (clock, Lossless)
+    pendingExit:  false,     ; b / video click while playing: exit once paused
+    lastGaveUp:   "",        ; time of the last unconfirmed fullscreen request
+    foregroundHwnd: 0,       ; last foreground window seen by the shell hook / tick
 
-    ; debounce — consecutive Gate 2 misses (see URL_MISS_DEBOUNCE in Config.ahk)
-    urlNotPlayableTicks: 0,
+    videoHotkeys: false,  ; gate for b w a s d 0 1 2 3 4 e q esc f1 f2 f3
 
-    ; ground-truth "is the video playing" observed directly by content.js,
-    ; bypassing SMTC (see StateEngine.ahk _UpdateMediaState)
-    extPlaying: false,
+    monitorVideo: true,  ; F7 toggle
 
     ; volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
     volumeSmoothedPeak: 0.0,
     volumeMultiplier:   1.0,
     volumeDebug:        "",  ; last _SetBrowserVolume() diagnostic, for the F6 tooltip
-
-    pendingExitFS: false,     ; set by LButton/b while playing — exits once audio stops
-    manuallyExitedFS: false,  ; user exited FS manually — blocks auto re-enter until audio stops
-
-    pendingF5: false,  ; set by F5 — blocks re-entry until page reload finishes, then clears
-
-    videoHotkeys: false,  ; gate for b w a s d 1 2 3 4 esc f1 f2 f3 f5
-
-    monitorVideo: true,  ; F7 toggle
-
-    ; Bilibili first-visit sleep — tracks each playable tab URL seen
-    startupDelaySeen: Map(),
-    ; consecutive-miss counter per startupDelaySeen entry — see pruning in StateEngine.ahk
-    startupDelayMissCount: Map(),
 
     songIsPlaying:        false,
     songSkipLock:         false,

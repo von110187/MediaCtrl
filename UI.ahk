@@ -3,7 +3,7 @@
 ; (fullscreen hides Windows' taskbar clock).
 ;
 ; +E0x20 = WS_EX_TRANSPARENT so clicks pass through to the browser and never
-; interfere with LButton fullscreen-exit. Gui's BackColor is a magenta
+; interfere with the extension's click-to-exit. Gui's BackColor is a magenta
 ; color-key that WinSetTransColor makes fully transparent, so only the text
 ; floats over the video.
 ;
@@ -40,8 +40,8 @@ InitClockOverlay() {
     ClockGui.Hide()
 }
 
-; Called directly from StateEngine.ahk's _EnterFullscreen/_ExitFullscreenByUser/
-; _ExitFullscreen for zero-delay show/hide. The SetTimer-driven
+; Called directly from StateEngine.ahk's _NotifyFullscreen for zero-delay
+; show/hide. The SetTimer-driven
 ; UpdateClockOverlay() below is a once-a-second safety net, not the primary trigger.
 UpdateClockVisibility() {
     global ClockGui, ClockTextCtrl, State, _clockShown
@@ -49,7 +49,7 @@ UpdateClockVisibility() {
     if !ClockGui
         return
 
-    if State.browserInFullScreen {
+    if State.machine.state == "fullscreen" {
         if !_clockShown {
             ClockTextCtrl.Value := FormatTime(, "h:mm")
             x := A_ScreenWidth - CLOCK_W - CLOCK_MARGIN_RIGHT
@@ -87,20 +87,20 @@ ShowTooltip() {
     ; ── Program / URL ────────────────────────────────────────
     t .= "PROGRAM`n" . LS
     t .= "Program:  " . (State.currentProgram ? State.currentProgram : "—") . "`n"
-    t .= "URL:      " . (State.currentUrl     ? SubStr(State.currentUrl, 1, 60) : "—") . "`n"
-    t .= "Matched:  " . (State.matchedSite    ? State.matchedSite.url : "—") . "`n"
+    t .= "URL:      " . (State.page ? SubStr(State.page.url, 1, 60) : "—") . "`n"
+    t .= "Site:     " . (State.page && State.page.site ? State.page.site : "—") . "`n"
     t .= "`n"
 
     ; ── browser ───────────────────────────────────────────────
     t .= StrUpper(CONFIG.BROWSER) . "`n" . LS
-    t .= "Playing:    " . (State.browserIsPlaying    ? "▶ yes" : "⏸ no") . "`n"
-    t .= "Fullscreen: " . (State.browserInFullScreen ? "yes"   : "no")   . "`n"
+    t .= "Playing:    " . (State.page && State.page.playing ? "▶ yes" : "⏸ no") . "`n"
+    t .= "Fullscreen: " . State.machine.state . "`n"
     t .= "`n"
 
     ; ── Volume leveler ────────────────────────────────────────
     t .= "VOLUME LEVELER`n" . LS
     t .= "Enabled: " . (CONFIG.VOLUME_LEVELER_ENABLED ? "yes" : "no") . "`n"
-    levelerActive := State.matchedSite && State.browserIsPlaying
+    levelerActive := State.page && State.page.site && State.page.playing
     t .= "Active:  " . (levelerActive ? "yes" : "no (needs matched site + playing)") . "`n"
     livePeak := _GetBrowserPeak()
     t .= "Peak now:   " . (livePeak >= 0 ? Round(livePeak, 4) : "n/a (no " . CONFIG.BROWSER . " session found)") . "`n"
@@ -118,16 +118,6 @@ ShowTooltip() {
     t .= "VIDEO HOTKEYS`n" . LS
     t .= "Enabled:  " . (State.videoHotkeys ? "ON" : "OFF") . "`n"
     t .= "Monitor:  " . (State.monitorVideo ? "On" : "Off") . "`n"
-    t .= "`n"
-
-    ; ── Playable tabs ────────────────────────────────────────
-    t .= "PLAYABLE TABS (" . State.playingTabs.Length . ")`n" . LS
-    if State.playingTabs.Length > 0 {
-        for url in State.playingTabs
-            t .= "  • " . SubStr(url, 1, 55) . "`n"
-    } else {
-        t .= "  (none)`n"
-    }
     t .= "`n"
 
     ; ── Speaker / Bass ───────────────────────────────────────

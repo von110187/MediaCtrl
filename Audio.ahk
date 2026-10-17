@@ -186,7 +186,7 @@ _UpdateVolumeLeveler() {
     if !CONFIG.VOLUME_LEVELER_ENABLED
         return
 
-    active := State.matchedSite && State.browserIsPlaying
+    active := State.page && State.page.site && State.page.playing
     if !active {
         if State.volumeMultiplier != 1.0 {
             State.volumeMultiplier   := 1.0

@@ -1,6 +1,10 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 #include Lib/Media.ahk
+#include Lib/Decide.ahk
+#include Lib/FsMachine.ahk
+#include Lib/LosslessPolicy.ahk
+#include Lib/LosslessDetect.ahk
 #include Config.ahk
 #include State.ahk
 #include StateEngine.ahk
@@ -28,11 +32,8 @@ _DeferredBridgeStart() {
 ; Register dynamic video hotkeys as Off — SetVideoHotkeys() controls them
 InitVideoHotkeys()
 
-; Fullscreen clock overlay — hidden until State.browserInFullScreen is true
+; Fullscreen clock overlay — hidden until the page reports fullscreen
 InitClockOverlay()
-
-; Register OS-level media events
-RegisterMediaEvents()
 
 ; Seed initial state before first tick
 try {
@@ -44,6 +45,9 @@ try {
 ; Adaptive timer — tightens when media is active
 State.currentInterval := CONFIG.TIMER_IDLE
 SetTimer(MonitorTick, CONFIG.TIMER_IDLE)
+
+; Page-tracked fullscreen and video keys (StateEngine.ahk)
+VideoStart()
 
 ; Lazy polling timers
 SetTimer(MonitorGame,       2000)
