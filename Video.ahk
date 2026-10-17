@@ -1,54 +1,3 @@
-; ============ MEDIA EVENT REGISTRATION ============
-; OS-level playback events — faster than polling for browser state changes.
-
-RegisterMediaEvents() {
-    try {
-        for session in Media.GetSessions()
-            _RegisterSessionEvents(session)
-    } catch {
-    }
-    Media.AddSessionsChangedEvent(_OnSessionsChanged)
-}
-
-_RegisterSessionEvents(session) {
-    session.AddPlaybackInfoChangedEvent(_OnPlaybackInfoChanged)
-}
-
-_OnPlaybackInfoChanged(session, *) {
-    global State, CONFIG
-    try {
-        if !InStr(session.SourceAppUserModelId, CONFIG.BROWSER)
-            return
-        newIsPlaying := session.PlaybackStatus = 4
-        if State.browserIsPlaying != newIsPlaying {
-            ; event-driven, no debounce needed
-            State.browserIsPlaying       := newIsPlaying
-            State.browserNotPlayingTicks := 0
-            try {
-                freshSessions := Media.GetSessions()
-                State.sessions := freshSessions
-            } catch {
-            }
-            _EvalVideoHotkeys()
-            ; a real SMTC play/pause is as strong a signal as extPlaying —
-            ; tighten (or relax) the poll rate now rather than waiting for
-            ; whatever's left of the current TIMER_IDLE tick to elapse
-            _UpdateAdaptiveTimer()
-        }
-    } catch {
-    }
-}
-
-_OnSessionsChanged(*) {
-    try {
-        sessions := Media.GetSessions()
-        for session in sessions
-            _RegisterSessionEvents(session)
-        UpdateState(sessions)
-    } catch {
-    }
-}
-
 ; ============ MONITOR GAME ============
 
 MonitorGame() {
@@ -87,114 +36,93 @@ MonitorLMStudio() {
 }
 
 ; ============ VIDEO HOTKEYS — dynamic registration ============
-; All video keys default OFF. _SetVideoHotkeys() in StateEngine toggles them.
+; All video keys default OFF. _SetVideoHotkeys() turns them on/off together,
+; as Lib/Decide.ahk says (StateEngine.ahk VideoEvaluate). Keys that reach the
+; page go through _SendToChrome; seek/speed go to the page via the extension.
+
+VIDEO_KEYS := Map(
+    "$b",   _HK_b,     ; exit fullscreen (pausing first if playing) / enter
+    "$w",   _HK_w,     ; w a s d — arrow keys
+    "$a",   _HK_a,
+    "$s",   _HK_s,
+    "$d",   _HK_d,     ; hold to seek on holdSeek sites
+    "$0",   _HK_0,     ; restart from the beginning
+    "$1",   _HK_Speed, ; 1 2 3 4 — playback speed (CONFIG.SPEEDS)
+    "$2",   _HK_Speed,
+    "$3",   _HK_Speed,
+    "$4",   _HK_Speed,
+    "$e",   _HK_e,     ; e / q — skip ±CONFIG.SEEK_SECONDS
+    "$q",   _HK_q,
+    "$Esc", _HK_Esc,   ; toggle fullscreen
+    "$F1",  _HK_Lossless,  ; F1 F2 F3 — Lossless Scaling passthrough
+    "$F2",  _HK_Lossless,
+    "$F3",  _HK_Lossless,
+)
 
 InitVideoHotkeys() {
-    ; b — exit fullscreen + pause
-    Hotkey("$b", _HK_b, "Off")
+    global VIDEO_KEYS
+    for key, handler in VIDEO_KEYS
+        Hotkey(key, handler, "Off")
+}
 
-    ; WASD — navigation (send arrow keys on media sites)
-    Hotkey("$w", _HK_w, "Off")
-    Hotkey("$a", _HK_a, "Off")
-    Hotkey("$s", _HK_s, "Off")
-    Hotkey("$d", _HK_d, "Off")
-
-    ; 0 — restart from beginning; 1234 — playback speed
-    Hotkey("$0", _HK_0, "Off")
-    Hotkey("$1", _HK_1, "Off")
-    Hotkey("$2", _HK_2, "Off")
-    Hotkey("$3", _HK_3, "Off")
-    Hotkey("$4", _HK_4, "Off")
-
-    ; e — skip forward 87 seconds (relative, not an absolute-time jump)
-    Hotkey("$e", _HK_e, "Off")
-
-    ; q — skip backward 87 seconds (relative, not an absolute-time jump)
-    Hotkey("$q", _HK_q, "Off")
-
-    ; Esc — toggle fullscreen
-    Hotkey("$Esc", _HK_Esc, "Off")
-
-    ; F1 F2 F3 — lossless hotkeys
-    Hotkey("$F1", _HK_Lossless, "Off")
-    Hotkey("$F2", _HK_Lossless, "Off")
-    Hotkey("$F3", _HK_Lossless, "Off")
-
-    ; F5 — exit fullscreen + lossless + refresh
-    Hotkey("$F5", _HK_F5, "Off")
+_SetVideoHotkeys(enable) {
+    global State, VIDEO_KEYS
+    if State.videoHotkeys = enable
+        return
+    State.videoHotkeys := enable
+    for key in VIDEO_KEYS
+        Hotkey(key, enable ? "On" : "Off")
 }
 
 ; ── Video hotkey handlers ─────────────────────────────────────────────────────
 
 _HK_b(*) {
     global State
-    if State.browserInFullScreen {
-        if State.browserIsPlaying {
-            Send(" ")
-            State.pendingExitFS := true
-        } else {
-            _ExitFullscreenByUser()
-        }
+    if State.machine.state != "fullscreen" {
+        _VideoToggleFullscreen()
+    } else if State.page && State.page.playing {
+        _SendToChrome("{Space}")
+        _VideoExitAfterPause()
+    } else {
+        _VideoManualExit()
     }
 }
 
-_HK_w(*) => Send("{Up}")
-_HK_a(*) => Send("{Left}")
-_HK_s(*) => Send("{Down}")
+_HK_w(*) => _SendToChrome("{Up}")
+_HK_a(*) => _SendToChrome("{Left}")
+_HK_s(*) => _SendToChrome("{Down}")
 
+; d: hold Right while held on holdSeek sites (Bilibili/Douyin seek). The
+; release is always sent, so the OS never keeps a synthetic Right held down.
 _HK_d(*) {
-    global State
-    site := State.matchedSite
-    if site && site.holdSeek {
+    site := _CurrentSite()
+    if site && site.holdSeek && _ChromeFocused() {
         Send("{Right down}")
         KeyWait("d")
         Send("{Right up}")
     } else {
-        Send("{Right}")
+        _SendToChrome("{Right}")
     }
 }
 
-_HK_0(*) => SendCommand("seek_0")
-_HK_e(*) => SendCommand("seek_fwd_87")
-_HK_q(*) => SendCommand("seek_back_87")
-_HK_1(*) => SendCommand("speed_1.0")
-_HK_2(*) => SendCommand("speed_1.5")
-_HK_3(*) => SendCommand("speed_2.0")
-_HK_4(*) => SendCommand("speed_3.0")
+_HK_0(*) => BridgeClient_Send({type: "seek", to: 0})
+_HK_e(*) => BridgeClient_Send({type: "seek", by: CONFIG.SEEK_SECONDS})
+_HK_q(*) => BridgeClient_Send({type: "seek", by: -CONFIG.SEEK_SECONDS})
 
-_HK_Esc(*) {
-    global State
-    if State.browserInFullScreen
-        _ExitFullscreenByUser()
-    else
-        _EnterFullscreen()
-}
-
-_HK_Lossless(*) {
+_HK_Speed(hk) {
     global CONFIG
-    Send(CONFIG.LOSSLESS_HOTKEY)
+    BridgeClient_Send({type: "speed", rate: CONFIG.SPEEDS[Integer(SubStr(hk, 2))]})
 }
 
-_HK_F5(*) {
+_HK_Esc(*) => _VideoToggleFullscreen()
+
+; A manual press during a fullscreen video hands Lossless Scaling for that
+; page to the user (Lib/LosslessPolicy.ahk).
+_HK_Lossless(*) {
     global State, CONFIG
-    site := State.matchedSite
-    if !site || !State.browserInFullScreen
+    if !_ChromeFocused()
         return
-
-    if site.mouseCenter
-        MouseMove(A_ScreenWidth/2, A_ScreenHeight/2)
-
+    LosslessPolicy.OnManualPress(State.lossless, State.machine.state, _PageId())
+    State.losslessSentAt := A_TickCount
     Send(CONFIG.LOSSLESS_HOTKEY)
-    Send(site.fsKey)
-    State.browserInFullScreen := false
-
-    ; blocks auto re-entry during reload; _UpdateMediaState clears manuallyExitedFS once audio stops
-    State.pendingF5       := true
-    State.manuallyExitedFS := true
-
-    Send("{F5}")
-}
-
-; placeholder until the video keys move to BridgeClient_Send (Task 7)
-SendCommand(cmd) {
 }
