@@ -14,7 +14,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
                  (+ token)       127.0.0.1:9224      (+ token)     SMTC / WASAPI
 ```
 
-- **AHK script** — the brain. Decides when to enter/leave fullscreen, when the video keys are on, and when to toggle Lossless Scaling, using pure, tested rule modules (`Lib/Decide.ahk`, `Lib/FsMachine.ahk`, `Lib/LosslessPolicy.ahk`). Also owns Spotify (SMTC + WASAPI), the volume leveler, and all the hotkeys.
+- **AHK script** — the brain. Decides when to enter/leave fullscreen, when the video keys are on, and when to toggle Lossless Scaling, using pure, tested rule modules (`Lib/Decide.ahk`, `Lib/FsMachine.ahk`, `Lib/LosslessPolicy.ahk`). Also owns Spotify (SMTC + WASAPI) and all the hotkeys.
 - **Node bridge** (`bridge/bridge.js`) — relays JSON between the two. Every client must open with `hello` and the shared token; extension clients also need a `chrome-extension://` origin. One client per role; a second copy of the extension is refused while the first is alive. The token is never sent outward.
 - **Chrome extension (MV3)** — reports the active tab's video state (site, playable, playing, ready, fullscreen, typing) and runs fullscreen/seek/speed inside the page. Site settings come from `Config.ahk`.
 
@@ -49,11 +49,6 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 - Runs inside the page: each video's loudness is measured over a few seconds and its gain moved toward one target level — quiet videos are turned up, loud ones down (±18 dB by default) — with a limiter catching peaks. Gaps and silence hold the gain; a new video starts from the last one's gain and settles within about a second.
 - Only attaches to video sources Web Audio can process (YouTube/Bilibili's streaming players, same-origin media), because anything else would play silent. Tuned via `CONFIG.PAGE_LEVELER`.
 
-**Volume leveler (fallback)**
-- Used only on pages where the page leveler couldn't attach. Reactively attenuates the browser's per-app WASAPI volume while a matched site is playing, smoothing out videos that are recorded louder/quieter than each other so they sound roughly consistent as you scroll a feed.
-- Attenuation-only (can turn a loud video down, never boost a quiet one past its own peak) — tuned via `CONFIG.VOLUME_LEVELER_*` (target peak, smoothing, step size, floor).
-- Resets the browser back to full volume once you're not watching, so it doesn't stay quiet for unrelated tabs.
-
 **Fullscreen clock overlay**
 - A small, click-through clock in the top-right corner of Chrome's monitor while in fullscreen video, filling the gap left by Windows' taskbar clock being hidden.
 
@@ -69,7 +64,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 **Hotkeys & system glue**
 - Media key remaps (play/pause, skip, a forced shutdown bound to one of the keys — careful with that one).
 - Volume and brightness key forwarding (PgUp/PgDn, Home/End → a brightness tool).
-- `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, which leveler is handling the volume, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player, volume errors) show only when they happen.
+- `F6` toggles a compact status tooltip: the video (site, playing, fullscreen), whether the video keys are on, Lossless Scaling, whether the page's volume is levelled, speaker/bass, and Spotify's time left. Problems (extension not connected, fullscreen gave up, waiting for the player) show only when they happen.
 - `F9`/`F10` manually force the bass EQ off/on.
 
 Removed in the page-tracked rewrite: `F5` (in video mode — Chrome's own F5 reloads, and Lossless switches off through the page's report), `F8` (next episode), the `LButton` click hook (the extension reports clicks), and the `Ctrl+W` state hack (closing the tab is reported as a page change).
@@ -123,9 +118,6 @@ All user-specific values live in `Config.ahk`:
 | `LOSSLESS_HOTKEY` | Key sent to toggle Lossless Scaling |
 | `BRIDGE_PORT` | The bridge's WebSocket port (127.0.0.1 only) |
 | `PAGE_LEVELER` | The in-page loudness leveler: on/off, target level, max boost/cut, averaging time, silence and limiter levels |
-| `VOLUME_LEVELER_ENABLED` | Master on/off for the fallback (WASAPI) volume leveler |
-| `VOLUME_LEVELER_TARGET` / `_MIN` | Target smoothed peak and attenuation floor (0.0–1.0) |
-| `VOLUME_LEVELER_SMOOTHING` / `_STEP` / `_INTERVAL` | EMA smoothing factor, max change per sample, sample interval (ms) |
 
 ## ⚠️ This is a personal config, not a general-purpose tool
 
@@ -147,8 +139,8 @@ If you're adapting this for your own use, start with `Config.ahk` and `Hotkeys.a
 | `State.ahk` | Shared global state object |
 | `StateEngine.ahk` | Program/Spotify state, and the video glue: page reports → rules → fullscreen requests, Lossless, video keys on/off |
 | `Video.ahk` | Game monitor, video-mode hotkey handlers |
-| `Audio.ahk` | Spotify outro detection, browser volume leveler, playback controls |
-| `Wasapi.ahk` | The one WASAPI audio-session loop shared by `Audio.ahk` |
+| `Audio.ahk` | Spotify outro detection and playback controls |
+| `Wasapi.ahk` | The WASAPI audio-session loop (Spotify's peak meter) |
 | `Speaker.ahk` | Startup speaker detection, bass EQ, Adam D3V shutdown watchdog |
 | `Bridge.ahk` | Token, `Extension/token.json`, starting/killing the Node bridge |
 | `BridgeClient.ahk` | AHK's WebSocket client to the bridge (connect, send, reconnect) |

@@ -24,19 +24,6 @@ global CONFIG := {
     ; bridge/bridge.js WebSocket port (127.0.0.1 only)
     BRIDGE_PORT: 9224,
 
-    ; ── Volume leveler ──────────────────────────────────────────────────────
-    ; Attenuation-only (Windows per-app volume can't boost past original
-    ; level) — quietly turns down loud videos to match the normal range
-    ; rather than boosting quiet ones. TARGET/MIN tuned against observed
-    ; Douyin/Bilibili peaks (normal ~0.1-0.3, occasional spikes ~0.5-0.7).
-    VOLUME_LEVELER_ENABLED:   true,
-    VOLUME_LEVELER_INTERVAL:  100,   ; ms between samples
-    VOLUME_LEVELER_TARGET:    0.35,   ; target smoothed peak, 0.0-1.0
-    VOLUME_LEVELER_DEADZONE:  0.01,  ; ignore error smaller than this
-    VOLUME_LEVELER_SMOOTHING: 0.08,  ; EMA alpha
-    VOLUME_LEVELER_STEP:      0.1,   ; max volume-multiplier change per sample
-    VOLUME_LEVELER_MIN:       0.3,   ; never attenuate below this multiplier
-
     ; ── Video sites ─────────────────────────────────────────────────────────
     ; Sent to the Chrome extension on connect (config message), so this is the
     ; only place site settings live.

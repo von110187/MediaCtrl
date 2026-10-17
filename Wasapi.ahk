@@ -1,8 +1,7 @@
 ; ============ WASAPI SESSIONS ============
-; One loop over the default render endpoint's audio sessions, shared by the
-; Spotify peak meter, the browser volume leveler and the F6 session list
-; (Audio.ahk). COM pointers are released in finally blocks, so a failing call
-; mid-loop never leaks them.
+; One loop over the default render endpoint's audio sessions, used by the
+; Spotify peak meter (Audio.ahk). COM pointers are released in finally
+; blocks, so a failing call mid-loop never leaks them.
 
 ; Calls callback(sessionControlPtr, pid, procName) for each session whose
 ; process name contains procMatch. procMatch "" means every session, including
