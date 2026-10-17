@@ -1,8 +1,6 @@
 ; ============ SPEAKER ============
 ; Speaker is detected ONCE at startup — we don't monitor mid-session changes.
 ; Harman Kardon: bass follows game state (on when in game, off otherwise).
-; Adam D3V:      first 30 min do nothing; after 30 min check if still present,
-;                if gone → shutdown PC (lazy single-shot timer, not polling).
 
 InitSpeaker() {
     global State, CONFIG
@@ -24,8 +22,6 @@ InitSpeaker() {
             Sleep(3000)
         }
         _SetBass(false)
-    } else if InStr(speakerName, "Adam D3V") {
-        ; timer set in Main.ahk after InitSpeaker()
     }
 }
 
