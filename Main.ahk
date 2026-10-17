@@ -7,6 +7,7 @@
 #include Lib/LosslessDetect.ahk
 #include Lib/Screen.ahk
 #include Lib/Settings.ahk
+#include Lib/Tone.ahk
 #include Config.ahk
 #include State.ahk
 #include StateEngine.ahk
@@ -23,6 +24,7 @@
 
 ; Track speaker once at startup — we don't monitor changes mid-session
 InitSpeaker()
+InitKeepAwake()  ; [speaker] keepAwake: a quiet tone so the speaker doesn't go to standby
 
 ; Deferred bridge start — avoids blocking hotkeys during npm/node startup
 SetTimer(_DeferredBridgeStart, -100)
@@ -39,11 +41,7 @@ InitVideoHotkeys()
 InitClockOverlay()
 
 ; Seed initial state before first tick
-try {
-    sessions := Media.GetSessions()
-    UpdateState(sessions)
-} catch {
-}
+try UpdateState(Media.GetSessions())
 
 ; Main tick: Spotify state and its silent-outro check (the video side has
 ; its own timer and the extension's reports)

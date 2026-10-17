@@ -5,7 +5,7 @@ Windows automation for watching videos and listening to Spotify, written in **Au
 - **Videos** on YouTube, Bilibili and Douyin go fullscreen by themselves, get keyboard controls, and all play at the same loudness.
 - **Lossless Scaling** can switch on and off with video fullscreen.
 - **Spotify** skips silent track endings.
-- **Optional extras** per PC: volume/brightness/media keys, and a bass EQ that follows a game.
+- **Optional extras** per PC: volume/brightness/media keys, a bass EQ that follows a game, and keeping the speaker from going to sleep.
 
 ## Quick start
 
@@ -32,6 +32,8 @@ Windows automation for watching videos and listening to Spotify, written in **Au
 **Spotify** *(desktop app)*. If a track is still playing but silent in its last 10 seconds, it skips to the next one.
 
 **Speaker bass** *(optional)*. With a Harman Kardon speaker, a bass-boost preset (Peace / Equalizer APO) is on while one of your games is focused.
+
+**Speaker keep-awake** *(optional)*. Speakers like the SoundSticks 4 go to standby after about 10 minutes of silence and cut off the start of the next sound. This plays a short tone every few minutes while nothing else is playing: 19 kHz by default, above what most adults hear.
 
 ## Keys
 
@@ -67,6 +69,7 @@ Each PC has its own `mediactrl_settings.ini` next to the script. It isn't in git
 | `[keys]` | `volume`, `brightness`, `spotify`, `shutdown` | all off |
 | `[spotify]` | `outroSkip`; `exePath`: only if Spotify isn't found | on; empty |
 | `[speaker]` | `harmanBass`; `peacePath`; `games`: comma-separated, no `.exe` | off; empty; empty |
+| | `keepAwake`; `keepAwakeMinutes`; `keepAwakeHz`; `keepAwakeDb` | off; 5; 19000; -20 |
 | `[leveler]` | `targetDb`: the loudness level, set by `-` / `=` | -20 |
 
 Switches take `1` / `0` (or `on`/`off`, `yes`/`no`). Anything missing or mistyped keeps its default. Reload the script after editing.

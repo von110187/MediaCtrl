@@ -76,7 +76,8 @@ global SETTINGS := SettingsFile.Load(SETTINGS_FILE, {
     lossless: {enabled: false, hotkey: "{F1}"},
     keys:     {volume: false, brightness: false, spotify: false, shutdown: false},
     spotify:  {outroSkip: true, exePath: ""},
-    speaker:  {harmanBass: false, peacePath: "", games: ""},
+    speaker:  {harmanBass: false, peacePath: "", games: "",
+               keepAwake: false, keepAwakeMinutes: 5, keepAwakeHz: 19000, keepAwakeDb: -20},
     leveler:  {targetDb: CONFIG.PAGE_LEVELER.targetDb},
 })
 ; comma-separated process names (without .exe) → list
