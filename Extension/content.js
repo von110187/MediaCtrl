@@ -7,7 +7,7 @@
     if (window.__mediaCtrlInjected) return;
     window.__mediaCtrlInjected = true;
 
-    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb } = globalThis.pageLogic;
+    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartGain, agcVideoKey, agcSwitch } = globalThis.pageLogic;
 
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
@@ -95,22 +95,35 @@
 
     // ── Page leveler (AGC) ──────────────────────────────────────────────────
     // Brings every video to the same loudness: the video's sound is measured
-    // (RMS over a few seconds) and a gain moves it toward leveler.targetDb —
-    // up for quiet videos, down for loud ones, within maxBoostDb/maxCutDb — and
-    // a limiter after it catches peaks. Silence holds the gain. A new video
-    // starts from the last video's gain and settles fast.
+    // (RMS over a few seconds, K-weighted like a LUFS meter so it follows how
+    // loud it sounds rather than its raw energy) and a gain moves it toward
+    // leveler.targetDb — up for quiet videos, down for loud ones, within
+    // maxBoostDb/maxCutDb — and a limiter after it catches peaks. Silence
+    // holds the gain.
+    // Each video is recognised (pageLogic.agcVideoKey) and its settled level
+    // remembered for the page (agcSwitch), so:
+    //   - the same video looping or replaying keeps its level;
+    //   - a video scrolled back to starts straight at its known level;
+    //   - an unknown one starts at most at leveler.startDb (quiet, so a loud
+    //     video never starts loud) and settles within about half a second.
+    // Feeds like Douyin reuse a few players as you scroll, so this is checked
+    // whenever a player loads or starts a video, and for the active player on
+    // every tick. Only that player's own gain changes, so a background player
+    // (Douyin preloading the next item) never disturbs the one being watched.
     // Only for sources Web Audio can hear (pageLogic.audioProcessable) —
     // anything else would play silent — and only once the AudioContext is
     // running, or the routed video would be silent until a click. The state's
     // "leveled" flag says whether this page's video is levelled (F6 shows it).
 
     const AGC_TICK_MS = 100;
+    const AGC_DEFAULT_START_DB = -12;
     let audioCtx = null;
     let agcTimer = null;
     let agcLastGain = 1;
-    let activeVideo = null;      // from the last buildState(), so the AGC loop
-                                 // doesn't disturb isActuallyAdvancing's sampling
-    const agcs = new WeakMap();  // video -> { analyser, gain, buf, levelDb, heardMs }
+    let activeVideo = null;        // from the last buildState(), so the AGC loop
+                                   // doesn't disturb isActuallyAdvancing's sampling
+    const agcs = new WeakMap();    // video -> { analyser, gain, buf, track, key }
+    const agcMemory = new Map();   // video key -> its settled level (agcSwitch)
 
     function levelVideo(video) {
         if (!leveler.enabled || !video || agcs.has(video)) return;
@@ -124,36 +137,69 @@
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 4096;
             const gain = audioCtx.createGain();
-            gain.gain.value = agcLastGain;
+            gain.gain.value = agcStartGain(agcLastGain, leveler.startDb ?? AGC_DEFAULT_START_DB);
             const limiter = audioCtx.createDynamicsCompressor();
             limiter.threshold.value = leveler.limiterDb;
             limiter.knee.value = 0;
             limiter.ratio.value = 20;
             limiter.attack.value = 0.002;
             limiter.release.value = 0.1;
+            // K-weighting (ITU-R BS.1770, as LUFS meters use), on the measuring
+            // branch only: drop the deep bass ears barely hear as loudness and
+            // lift the presence range they hear most — bass-heavy and voice-
+            // heavy videos then measure the way they sound
+            const highPass = audioCtx.createBiquadFilter();
+            highPass.type = "highpass";
+            highPass.frequency.value = 38;
+            highPass.Q.value = 0.5;
+            const presence = audioCtx.createBiquadFilter();
+            presence.type = "highshelf";
+            presence.frequency.value = 1500;
+            presence.gain.value = 4;
             const source = audioCtx.createMediaElementSource(video);
-            source.connect(analyser);  // measured before the gain, so no feedback
+            source.connect(highPass).connect(presence).connect(analyser);  // measured before the gain, so no feedback
             source.connect(gain).connect(limiter).connect(audioCtx.destination);
-            agcs.set(video, { analyser, gain, buf: new Float32Array(analyser.fftSize), levelDb: null, heardMs: 0 });
+            agcs.set(video, { analyser, gain, buf: new Float32Array(analyser.fftSize), track: agcNew(), key: null });
+            // react the moment a player loads or starts a video, not on the next tick
+            video.addEventListener("loadedmetadata", () => agcCheckVideo(video));
+            video.addEventListener("playing", () => agcCheckVideo(video));
+            agcCheckVideo(video);
             if (!agcTimer) agcTimer = setInterval(agcTick, AGC_TICK_MS);
         } catch (e) {
             // e.g. the element is already routed by the page itself — leave it alone
         }
     }
 
+    // Has this player moved to another video? Then remember the old one's
+    // level and set the gain for the new one at once: its known level, or the
+    // quiet start level if it's unknown. Same video (loop, replay): nothing.
+    function agcCheckVideo(video) {
+        const agc = agcs.get(video);
+        if (!agc) return;
+        const key = agcVideoKey(video.currentSrc, video.duration);
+        if (key !== null && key === agc.key) return;
+        const next = agcSwitch(agcMemory, agc.key, agc.track, key);
+        agc.track = next.track;
+        agc.key = key;
+        const start = next.known
+            ? Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20)
+            : agcStartGain(agcLastGain, leveler.startDb ?? AGC_DEFAULT_START_DB);
+        agc.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+        agc.gain.gain.setValueAtTime(start, audioCtx.currentTime);
+    }
+
     function agcTick() {
         const video = activeVideo;
         const agc = video && agcs.get(video);
         if (!agc || video.paused || audioCtx.state !== "running") return;
+        agcCheckVideo(video);
         agc.analyser.getFloatTimeDomainData(agc.buf);
         const db = rmsDb(agc.buf);
         if (!(db > leveler.silenceDb)) return;  // silence or a gap: hold the gain
-        agc.heardMs += AGC_TICK_MS;
-        // averaging time grows to smoothingS over the first seconds of sound
-        const tauMs = Math.min(leveler.smoothingS * 1000, agc.heardMs + 300);
-        agc.levelDb = agc.levelDb === null ? db : agc.levelDb + (AGC_TICK_MS / tauMs) * (db - agc.levelDb);
-        agcLastGain = Math.pow(10, agcGainDb(agc.levelDb, leveler) / 20);
-        agc.gain.gain.setTargetAtTime(agcLastGain, audioCtx.currentTime, 0.3);
+        agcLastGain = Math.pow(10, agcUpdate(agc.track, db, leveler, AGC_TICK_MS) / 20);
+        // glide quickly while a new video settles, gently after that
+        const glideS = agc.track.heardMs < 1000 ? 0.08 : 0.3;
+        agc.gain.gain.setTargetAtTime(agcLastGain, audioCtx.currentTime, glideS);
     }
 
     // ── State reporting ─────────────────────────────────────────────────────
@@ -381,6 +427,14 @@
     window.addEventListener("blur", () => report(false));
     for (const evt of ["play", "pause", "playing", "ended", "emptied", "loadeddata"]) {
         document.addEventListener(evt, scheduleReport, true);
+    }
+    // the page leveler takes over a video the instant it's loaded or starts,
+    // not at the next state report (~250 ms later) — otherwise a brand-new
+    // player's first moment plays unlevelled, at full volume
+    for (const evt of ["loadedmetadata", "play"]) {
+        document.addEventListener(evt, (e) => {
+            if (e.target.tagName === "VIDEO" && currentSite()) levelVideo(e.target);
+        }, true);
     }
     new MutationObserver(scheduleReport).observe(document.documentElement, { childList: true, subtree: true });
     // isActuallyAdvancing needs regular samples; also catches SPA URL changes

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb } = require("../../Extension/lib/pageLogic.js");
+const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartGain, agcVideoKey, agcSwitch } = require("../../Extension/lib/pageLogic.js");
 
 const sites = {
     youtube: { match: "youtube.com" },
@@ -79,4 +79,106 @@ test("agcGainDb moves toward the target within the limits", () => {
     assert.strictEqual(agcGainDb(-10, cfg), -10, "loud video cut");
     assert.strictEqual(agcGainDb(-60, cfg), 18, "boost capped");
     assert.strictEqual(agcGainDb(5, cfg), -18, "cut capped");
+});
+
+// AGC level tracking: a fresh measurement settles fast; a long-running one is steady
+const cfg = { targetDb: -20, maxBoostDb: 18, maxCutDb: 18, smoothingS: 3 };
+const TICK = 100;
+function feed(agc, db, ticks) { for (let i = 0; i < ticks; i++) agcUpdate(agc, db, cfg, TICK); }
+
+test("agcUpdate: a new video settles within about half a second", () => {
+    const agc = agcNew();
+    feed(agc, -10, 100);                 // a loud video for 10 s
+    const fresh = agcNew();              // the next video starts fresh
+    feed(fresh, -40, 5);                 // 0.5 s of a quiet video
+    assert.ok(Math.abs(fresh.levelDb - -40) < 1, "fresh: " + fresh.levelDb);
+});
+
+test("agcUpdate: without a reset, a long-running measurement is slow to move", () => {
+    const agc = agcNew();
+    feed(agc, -10, 100);
+    feed(agc, -40, 5);                   // the same quiet 0.5 s, no reset
+    assert.ok(agc.levelDb > -25, "steady: " + agc.levelDb);
+});
+
+test("agcUpdate returns the gain for the current level, once settled", () => {
+    const agc = agcNew();
+    feed(agc, -30, 20);                  // 2 s: past the no-boost start
+    assert.strictEqual(agcUpdate(agc, -30, cfg, TICK), 10);
+});
+
+// a new video starts at most at the start level (default 0.5 = -6 dB), lower
+// if the previous video needed a bigger cut; never boosted — a loud video
+// starting loud is what hurts
+test("agcStartGain starts at most at the start level", () => {
+    const half = Math.pow(10, -6 / 20);
+    assert.strictEqual(agcStartGain(Math.pow(10, 18 / 20), -6), half, "a quiet video's boost isn't carried");
+    assert.strictEqual(agcStartGain(1, -6), half, "unity becomes the start level");
+    assert.strictEqual(agcStartGain(0.2, -6), 0.2, "a bigger cut is kept");
+});
+
+// telling videos apart: a plain URL is the video; streamed (blob:) players get
+// a new URL every load, so their exact duration identifies the video instead
+test("agcVideoKey: URL for plain sources, duration for streamed ones", () => {
+    assert.strictEqual(agcVideoKey("https://v.douyin.com/a.mp4", 14.37), "https://v.douyin.com/a.mp4");
+    assert.strictEqual(agcVideoKey("blob:https://www.douyin.com/1f2e", 14.371), "dur:14.37");
+    assert.strictEqual(agcVideoKey("blob:https://www.douyin.com/1f2e", NaN), null, "duration not known yet");
+    assert.strictEqual(agcVideoKey("", 10), "dur:10.00");
+});
+
+test("agcSwitch: an unknown video starts fresh", () => {
+    const cache = new Map();
+    const r = agcSwitch(cache, null, null, "dur:10.00");
+    assert.strictEqual(r.known, false);
+    assert.strictEqual(r.track.levelDb, null);
+});
+
+test("agcSwitch: scrolling back restores the video's settled level", () => {
+    const cache = new Map();
+    const settled = { levelDb: -12, heardMs: 4000 };
+    agcSwitch(cache, "dur:10.00", settled, "dur:20.00");            // leave video A
+    const back = agcSwitch(cache, "dur:20.00", agcNew(), "dur:10.00"); // back to A
+    assert.strictEqual(back.known, true);
+    assert.strictEqual(back.track.levelDb, -12);
+    back.track.levelDb = -30;                                         // it keeps measuring...
+    assert.strictEqual(cache.get("dur:10.00").levelDb, -12, "...without changing the stored copy");
+});
+
+test("agcSwitch: a barely-heard video isn't remembered", () => {
+    const cache = new Map();
+    agcSwitch(cache, "dur:10.00", { levelDb: -12, heardMs: 300 }, "dur:20.00");
+    assert.strictEqual(cache.has("dur:10.00"), false);
+});
+
+test("agcSwitch: remembers at most 200 videos, dropping the oldest", () => {
+    const cache = new Map();
+    for (let i = 0; i < 205; i++) agcSwitch(cache, "v" + i, { levelDb: -20, heardMs: 2000 }, "next");
+    assert.strictEqual(cache.size, 200);
+    assert.ok(!cache.has("v0") && cache.has("v204"));
+});
+
+// A loud moment is followed within a fraction of a second; a quiet one only
+// slowly — so a quiet stretch can't leave a big boost in place when it gets loud
+test("agcUpdate: follows a louder sound fast, a quieter one slowly", () => {
+    const up = agcNew();
+    feed(up, -30, 50);                   // settled on a quiet video
+    feed(up, -10, 3);                    // 0.3 s of loud
+    assert.ok(up.levelDb > -14, "loud followed fast: " + up.levelDb);
+
+    const down = agcNew();
+    feed(down, -10, 50);                 // settled on a loud video
+    feed(down, -30, 3);                  // 0.3 s of quiet
+    assert.ok(down.levelDb > -14, "quiet followed slowly: " + down.levelDb);
+});
+
+// While a new video settles it may only be turned down, never up: a quiet
+// first moment must not leave a boost in place for the loud part after it
+test("agcUpdate: no boost in a new video's first 1.5 s", () => {
+    const agc = agcNew();
+    feed(agc, -40, 10);                  // 1 s of a quiet intro
+    assert.strictEqual(agcUpdate(agc, -40, cfg, TICK), 0, "no boost yet");
+    feed(agc, -40, 10);                  // past 1.5 s
+    assert.ok(agcUpdate(agc, -40, cfg, TICK) > 0, "boost allowed after settling");
+    const loud = agcNew();
+    assert.ok(agcUpdate(loud, -5, cfg, TICK) < 0, "cuts are allowed at once");
 });

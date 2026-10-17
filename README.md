@@ -25,7 +25,7 @@ Windows automation for watching videos and listening to Spotify, written in **Au
 
 **Typing always works.** The video keys turn off while you type anywhere: page text boxes (Bilibili comments and YouTube live chat included), the address bar, the find bar and dialogs.
 
-**Same loudness for every video.** Each video's loudness is measured and brought to one level: quiet videos up, loud ones down. `-` / `=` set that level, and it's remembered.
+**Same loudness for every video.** Each video's loudness is measured the way ears hear it and brought to one level: quiet videos up, loud ones down. Loud moments are turned down within a fraction of a second; a new video starts quiet and settles within about half a second; a video you scroll back to (or that loops) keeps the level it had. `-` / `=` set that level, and it's remembered.
 
 **Lossless Scaling** *(optional)*. Scaling turns on when a video's fullscreen starts and off when it ends, however it ends. It's toggled only while Chrome is in front (otherwise it waits), and only when its real state differs, so it never toggles the wrong way.
 
