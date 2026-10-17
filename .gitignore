@@ -5,3 +5,4 @@ package-lock.json
 # Created at runtime by Bridge.ahk — the shared bridge token
 mediactrl_token.txt
 Extension/token.json
+mediactrl_settings.ini
