@@ -24,11 +24,6 @@ global State := {
 
     monitorVideo: true,  ; F7 toggle
 
-    ; volume leveler — see Audio.ahk _UpdateVolumeLeveler / Config.ahk
-    volumeSmoothedPeak: 0.0,
-    volumeMultiplier:   1.0,
-    volumeDebug:        "",  ; last _SetBrowserVolume() diagnostic, for the F6 tooltip
-
     songIsPlaying:        false,
     songSkipLock:         false,
     songSkipCooldownUntil: 0,   ; TickCount — outro skip suppressed until this time

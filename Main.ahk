@@ -55,7 +55,6 @@ VideoStart()
 SetTimer(MonitorGame,       2000)
 SetTimer(ShowTooltip,       500)
 SetTimer(UpdateClockOverlay, 1000)
-SetTimer(_UpdateVolumeLeveler, CONFIG.VOLUME_LEVELER_INTERVAL)
 
 OnExit(ExitHandler)
 ExitHandler(reason, code) {

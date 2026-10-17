@@ -106,12 +106,7 @@ ShowTooltip() {
         . (v.lossless.pending != "" ? "  ·  " . v.lossless.pending . " when Chrome is back" : "") . "`n"
 
     ; ── Sound ────────────────────────────────────────────────
-    if pageLeveled
-        t .= "Volume:    page leveler`n"
-    else
-        t .= "Volume:    " . _RoundTrim(State.volumeMultiplier, 2) . "×" . (CONFIG.VOLUME_LEVELER_ENABLED ? "" : " (leveler off)") . "`n"
-    if IsObject(State.volumeDebug) && State.volumeDebug.error != ""
-        t .= "           volume error: " . State.volumeDebug.error . "`n"
+    t .= "Volume:    " . (pageLeveled ? "levelled" : "not levelled on this page") . "`n"
     t .= "Speaker:   " . (State.activeSpeaker ? State.activeSpeaker : "—") . "  ·  bass " . (State.bassOn ? "ON" : "off") . "`n"
     t .= "Spotify:   " . _SpotifyLine() . "`n"
 
