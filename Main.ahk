@@ -12,6 +12,7 @@
 #include BridgeClient.ahk
 #include Speaker.ahk
 #include Video.ahk
+#include Wasapi.ahk
 #include Audio.ahk
 #include Hotkeys.ahk
 #include UI.ahk

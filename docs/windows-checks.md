@@ -94,3 +94,14 @@ behaviour is good enough". Now scaling follows fullscreen every time (also
 when the same video re-enters), and a manual press only flips the tracked
 state. Re-checked: F1 off → Esc (stays off) → Esc re-enters with Lossless on ✓.
 Review Focus 5 no longer applies.
+
+## 6. Shared WASAPI loop and the leveler on page state (Task 8) — 2026-10-17: PASS
+
+- Old and new `_GetSongPeak` / `_GetBrowserPeak` / `_SetBrowserVolume` /
+  `_GetWasapiSessionsDebug` run side by side on the live sessions gave the
+  same session list and counts (`total=4 browserSessions=1 volumeSet=1`);
+  only the live peak values differed.
+- F6: Spotify peak above 0 while playing, 0 when paused ✓.
+- Douyin: the leveler multiplier dropped on a loud video and went back to
+  1.0x on a non-video page ✓.
+- Spotify outro skip fired on a silent outro after the reload ✓.

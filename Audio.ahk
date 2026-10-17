@@ -69,60 +69,8 @@ _CheckSongOutro(session) {
 ; the native desktop app, so this matches its own Spotify.exe WASAPI
 ; session(s) directly (CONFIG.SONG = "spotify" matches the process name).
 _GetSongPeak() {
-    global WASAPI_CLSIDS, CONFIG
-
-    try {
-        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
-        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
-
-        sessionManagerGUID := Buffer(16)
-        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
-        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
-        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
-        ComCall(3, sessionEnumPtr, "int*", &count := 0)
-
-        maxPeak := -1
-        Loop count {
-            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
-            try {
-                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
-                if !sessionControl2
-                    continue
-
-                ComCall(14, sessionControl2, "uint*", &pid := 0)
-                sessionControl2 := ""
-
-                if pid <= 0
-                    continue
-
-                try procName := ProcessGetName(pid)
-                catch
-                    continue
-
-                if !InStr(procName, CONFIG.SONG)
-                    continue
-
-                meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
-                if !meterInfo
-                    continue
-
-                ComCall(3, meterInfo, "float*", &peak := 0.0)
-                meterInfo := ""
-
-                if peak > maxPeak
-                    maxPeak := peak
-            } finally {
-                ObjRelease(sessionControlPtr)
-            }
-        }
-
-        ObjRelease(sessionEnumPtr)
-        ObjRelease(sessionManagerPtr)
-        ObjRelease(devicePtr)
-        return maxPeak
-    } catch {
-    }
-    return -1
+    global CONFIG
+    return Wasapi_MaxPeak(CONFIG.SONG)
 }
 
 
@@ -131,44 +79,21 @@ _GetSongPeak() {
 ; session name Spotify registers under.
 
 _GetWasapiSessionsDebug() {
-    global WASAPI_CLSIDS
     result := ""
-    try {
-        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
-        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
-
-        sessionManagerGUID := Buffer(16)
-        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
-        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
-        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
-        ComCall(3, sessionEnumPtr, "int*", &count := 0)
-
-        Loop count {
-            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
-            try {
-                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
-                if !sessionControl2
-                    continue
-                ComCall(4,  sessionControlPtr, "ptr*", &namePtr := 0)
-                ComCall(12, sessionControl2,   "ptr*", &idPtr   := 0)
-                ComCall(14, sessionControl2,   "uint*", &pid    := 0)
-                sessionControl2 := ""
-                name := namePtr ? StrGet(namePtr, "UTF-16") : "(no name)"
-                id   := idPtr   ? StrGet(idPtr,   "UTF-16") : "(no id)"
-                procName := ""
-                try procName := ProcessGetName(pid)
-                result .= "  [" pid " " procName "] " name "`n    " SubStr(id, 1, 60) "`n"
-            } finally {
-                ObjRelease(sessionControlPtr)
-            }
-        }
-        ObjRelease(sessionEnumPtr)
-        ObjRelease(sessionManagerPtr)
-        ObjRelease(devicePtr)
-    } catch as e {
-        result := "  error: " e.Message
-    }
+    if Wasapi_ForEachSession("", Visit, &err) < 0
+        return "  error: " err
     return result
+
+    Visit(sessionControlPtr, pid, procName) {
+        sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
+        ComCall(4,  sessionControlPtr, "ptr*", &namePtr := 0)  ; GetDisplayName
+        ComCall(12, sessionControl2,   "ptr*", &idPtr   := 0)  ; GetSessionIdentifier
+        name := namePtr ? StrGet(namePtr, "UTF-16") : "(no name)"
+        id   := idPtr   ? StrGet(idPtr,   "UTF-16") : "(no id)"
+        DllCall("Ole32\CoTaskMemFree", "ptr", namePtr)
+        DllCall("Ole32\CoTaskMemFree", "ptr", idPtr)
+        result .= "  [" pid " " procName "] " name "`n    " SubStr(id, 1, 60) "`n"
+    }
 }
 ; ============ VOLUME LEVELER ============
 ; Reactively attenuates the browser's per-app volume so videos recorded
@@ -234,60 +159,8 @@ _UpdateVolumeLeveler() {
 ; CONFIG.BROWSER WASAPI sessions (a tab's audio can live in any renderer-
 ; process session under Chromium's site-isolation). -1 on failure/no session.
 _GetBrowserPeak() {
-    global WASAPI_CLSIDS, CONFIG
-
-    try {
-        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
-        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
-
-        sessionManagerGUID := Buffer(16)
-        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
-        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
-        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
-        ComCall(3, sessionEnumPtr, "int*", &count := 0)
-
-        maxPeak := -1
-        Loop count {
-            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
-            try {
-                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
-                if !sessionControl2
-                    continue
-
-                ComCall(14, sessionControl2, "uint*", &pid := 0)
-                sessionControl2 := ""
-
-                if pid <= 0
-                    continue
-
-                try procName := ProcessGetName(pid)
-                catch
-                    continue
-
-                if !InStr(procName, CONFIG.BROWSER)
-                    continue
-
-                meterInfo := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioMeterInformation)
-                if !meterInfo
-                    continue
-
-                ComCall(3, meterInfo, "float*", &peak := 0.0)
-                meterInfo := ""
-
-                if peak > maxPeak
-                    maxPeak := peak
-            } finally {
-                ObjRelease(sessionControlPtr)
-            }
-        }
-
-        ObjRelease(sessionEnumPtr)
-        ObjRelease(sessionManagerPtr)
-        ObjRelease(devicePtr)
-        return maxPeak
-    } catch {
-    }
-    return -1
+    global CONFIG
+    return Wasapi_MaxPeak(CONFIG.BROWSER)
 }
 
 ; Sets the WASAPI per-app volume multiplier (0.0-1.0) on every CONFIG.BROWSER
@@ -296,61 +169,23 @@ _GetBrowserPeak() {
 ; different interfaces off the same session pointer, so one can silently
 ; fail while the other works.
 _SetBrowserVolume(multiplier) {
-    global WASAPI_CLSIDS, CONFIG
+    global CONFIG
     result := {total: 0, browserSessions: 0, volumeSet: 0, error: ""}
-
-    try {
-        enumerator := ComObject(WASAPI_CLSIDS.MMDeviceEnumerator, WASAPI_CLSIDS.IMMDeviceEnumerator)
-        ComCall(4, enumerator, "int", 0, "int", 1, "ptr*", &devicePtr := 0)
-
-        sessionManagerGUID := Buffer(16)
-        DllCall("Ole32\CLSIDFromString", "Str", WASAPI_CLSIDS.IAudioSessionManager2, "Ptr", sessionManagerGUID)
-        ComCall(3, devicePtr, "ptr", sessionManagerGUID, "int", 23, "ptr", 0, "ptr*", &sessionManagerPtr := 0)
-        ComCall(5, sessionManagerPtr, "ptr*", &sessionEnumPtr := 0)
-        ComCall(3, sessionEnumPtr, "int*", &count := 0)
-        result.total := count
-
-        Loop count {
-            ComCall(4, sessionEnumPtr, "int", A_Index - 1, "ptr*", &sessionControlPtr := 0)
-            try {
-                sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
-                if !sessionControl2
-                    continue
-
-                ComCall(14, sessionControl2, "uint*", &pid := 0)
-                sessionControl2 := ""
-
-                if pid <= 0
-                    continue
-
-                try procName := ProcessGetName(pid)
-                catch
-                    continue
-
-                if !InStr(procName, CONFIG.BROWSER)
-                    continue
-
-                result.browserSessions += 1
-
-                simpleVolume := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.ISimpleAudioVolume)
-                if !simpleVolume
-                    continue
-
-                ComCall(3, simpleVolume, "float", multiplier, "ptr", 0)  ; ISimpleAudioVolume::SetMasterVolume
-                simpleVolume := ""
-                result.volumeSet += 1
-            } finally {
-                ObjRelease(sessionControlPtr)
-            }
-        }
-
-        ObjRelease(sessionEnumPtr)
-        ObjRelease(sessionManagerPtr)
-        ObjRelease(devicePtr)
-    } catch as e {
-        result.error := e.Message
-    }
+    total := Wasapi_ForEachSession(CONFIG.BROWSER, Visit, &err)
+    if total < 0
+        result.error := err
+    else
+        result.total := total
     return result
+
+    Visit(sessionControlPtr, *) {
+        result.browserSessions += 1
+        simpleVolume := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.ISimpleAudioVolume)
+        if !simpleVolume
+            return
+        ComCall(3, simpleVolume, "float", multiplier, "ptr", 0)  ; ISimpleAudioVolume::SetMasterVolume
+        result.volumeSet += 1
+    }
 }
 
 ; ============ SONG CONTROLS ============
