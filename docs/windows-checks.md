@@ -153,3 +153,26 @@ Douyin: a tap of `d` or Right seeks as before; holding either plays at 2×
   Lossless on, Esc exits with Lossless off, w/a/s/d, e/q and 1–5 unchanged ✓.
   Chrome's per-app volume in the Windows mixer was confirmed at 100 % before
   the old leveler was removed.
+
+## 12. Per-PC settings and the YouTube re-entry fix — 2026-10-17: PASS
+
+- **This PC** with `mediactrl_settings.ini` switching everything on: Lossless
+  on/off with fullscreen and by F1, PgUp/PgDn volume, Home/End brightness,
+  Play/Pause and Insert to Spotify, `=` level tooltip remembered across a
+  reload — all as before ✓.
+- **Fresh clone** of the branch (scratch folder, no settings file): the
+  template was copied on first start; Lossless and every `[keys]` group off,
+  outro skip on, level -20; `Main.ahk` loads; 67/67 AHK tests pass. Not run
+  live there (it would have killed this PC's bridge), so the keys passing
+  through with the groups off rests on AHK's `#HotIf`.
+- **YouTube: Esc out, one Esc tap back in, sometimes exited at once.** Traced
+  with temporary logging: when YouTube's fullscreen button took longer than
+  the 300 ms cutoff (once 289 ms in the trace), the extension's
+  `requestFullscreen()` fallback was refused ("Permissions check failed" — the
+  button's request had used the activation), so it reported `enterFailed`,
+  AHK sent the `f` key, YouTube finished entering from the button, then `f`
+  toggled it back out. Forcing the overlap (cutoff 5 ms) reproduced it on
+  most tries. Fix: after a refused fallback, wait up to 500 ms more for the
+  button's own fullscreen before reporting `enterFailed`. With the forced
+  overlap: 24/24 re-entries settled, no `f` sent, no exits. With the normal
+  cutoff: re-entry stays in ✓.
