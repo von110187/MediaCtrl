@@ -74,27 +74,6 @@ _GetSongPeak() {
 }
 
 
-; ============ WASAPI SESSION DEBUG ============
-; All WASAPI session names + identifiers, for the tooltip to diagnose which
-; session name Spotify registers under.
-
-_GetWasapiSessionsDebug() {
-    result := ""
-    if Wasapi_ForEachSession("", Visit, &err) < 0
-        return "  error: " err
-    return result
-
-    Visit(sessionControlPtr, pid, procName) {
-        sessionControl2 := ComObjQuery(sessionControlPtr, WASAPI_CLSIDS.IAudioSessionControl2)
-        ComCall(4,  sessionControlPtr, "ptr*", &namePtr := 0)  ; GetDisplayName
-        ComCall(12, sessionControl2,   "ptr*", &idPtr   := 0)  ; GetSessionIdentifier
-        name := namePtr ? StrGet(namePtr, "UTF-16") : "(no name)"
-        id   := idPtr   ? StrGet(idPtr,   "UTF-16") : "(no id)"
-        DllCall("Ole32\CoTaskMemFree", "ptr", namePtr)
-        DllCall("Ole32\CoTaskMemFree", "ptr", idPtr)
-        result .= "  [" pid " " procName "] " name "`n    " SubStr(id, 1, 60) "`n"
-    }
-}
 ; ============ VOLUME LEVELER ============
 ; Reactively attenuates the browser's per-app volume so videos recorded
 ; louder/quieter than each other sound roughly consistent when scrolling a
