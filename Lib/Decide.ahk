@@ -34,16 +34,16 @@ class Decide {
         if !inp.monitorOn
             return Decide._Result(state, false, false, false)
 
-        ; Rule 1: not Chrome / not a matched site. Switching apps never exits
+        ; not Chrome / not a matched site. Switching apps never exits
         ; fullscreen by itself, and doesn't forget a manual exit either — coming
-        ; back to the same video keeps it out of fullscreen (Rule 4).
+        ; back to the same video keeps it out of fullscreen.
         if !inp.chromeFocused || !inp.site {
             if isTick
                 state.notPlayableTicks := 0
             return Decide._Result(state, false, false, false)
         }
 
-        ; Rule 7: leaving a playable page needs MISS_TICKS consecutive ticks
+        ; leaving a playable page needs MISS_TICKS consecutive ticks
         if isTick
             state.notPlayableTicks := inp.playable ? 0 : state.notPlayableTicks + 1
         if !inp.playable {
@@ -59,23 +59,23 @@ class Decide {
             return Decide._Result(state, false, false, false)
 
         if inp.playing {
-            ; Rule 3: auto-enter; Rule 4: not after a manual exit
+            ; auto-enter, but not after a manual exit on this page
             blocked := state.manualExit && state.manualExitPage == inp.pageId
             enter := inp.fs == "normal" && inp.ready && !blocked
             return Decide._Result(state, enter, false, true)
         }
 
-        ; Rule 5: paused in fullscreen keeps keys on
+        ; paused in fullscreen keeps keys on
         if inp.fs == "fullscreen"
             return Decide._Result(state, false, false, true)
 
-        ; Rule 6: stopped and not fullscreen — done
+        ; stopped and not fullscreen — done
         if inp.fs == "normal"
             state.manualExit := false
         return Decide._Result(state, false, false, false)
     }
 
-    ; Rule 8: a fullscreen exit the script didn't request counts as manual,
+    ; a fullscreen exit the script didn't request counts as manual,
     ; except when the page itself was replaced (reload / navigation).
     ; pageId: the page the exit happened on.
     static OnUnrequestedExit(state, pageChanged, pageId := "") {

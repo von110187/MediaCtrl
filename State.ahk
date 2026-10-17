@@ -34,7 +34,7 @@ global State := {
 
     bassOn: false,
 
-    gameRunning: Map(),  ; keyed as State.gameRunning["ZenlessZoneZero"]
+    gameRunning: Map(),  ; game process name (from [speaker] games) -> running?
 
     showTooltip: false,
 
