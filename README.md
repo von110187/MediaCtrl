@@ -40,7 +40,7 @@ It's made of three pieces. The AHK script and the Chrome extension both connect 
 
 **Video mode keys** (only while watching a video on a matched site in Chrome)
 - `w a s d` → arrow keys. A tap of `d` or Right seeks as usual; **holding** `d` or Right plays the video at 2× until you let go, on every site (YouTube included).
-- `e` / `q` skip ±87 s, `0` restarts, `1 2 3 4` set speed 1×/1.5×/2×/3×.
+- `e` / `q` skip ±87 s, `0` restarts, `1 2 3 4 5` set speed 1×/1.5×/2×/3×/0.5×.
 - `Esc` toggles fullscreen; `b` pauses and exits (or enters when not fullscreen).
 - `F1 F2 F3` → Lossless Scaling hotkey passthrough.
 - `F7` toggles video-mode monitoring on/off entirely (exits fullscreen if currently in it).
@@ -112,7 +112,7 @@ All user-specific values live in `Config.ahk`:
 | `SONG_EXE` | Native Spotify executable name, used to activate/launch it when no SMTC session exists yet (e.g. `Spotify.exe`) |
 | `SITES` | Per-site settings, sent to the extension: domain, the site's fullscreen button, the player container, the fallback fullscreen key |
 | `TICK_MS` | Video evaluation timer (ms) |
-| `SEEK_SECONDS` / `SPEEDS` | `e`/`q` jump size, and the `1 2 3 4` playback speeds |
+| `SEEK_SECONDS` / `SPEEDS` | `e`/`q` jump size, and the `1 2 3 4 5` playback speeds |
 | `HOLD_SPEED` / `HOLD_TAP_MS` | Rate while `d`/Right is held, and how short a press counts as a tap |
 | `CLICK_EXIT_WAIT_MS` | How long `b`/a video click waits for the site's pause before exiting anyway |
 | `GAME_LIST` | Process names that trigger bass-on behavior when focused |
