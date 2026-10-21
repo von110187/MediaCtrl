@@ -88,32 +88,42 @@
         return { levelDb: null, heardMs: 0 };
     }
 
-    const AGC_ATTACK_MS = 200;     // a louder sound is followed within ~0.2 s
-    const AGC_NO_BOOST_MS = 1500;  // a new video may only be turned down this long
+    const AGC_ATTACK_MS = 200;          // while a new video settles, a louder sound is followed within ~0.2 s
+    const AGC_STEADY_ATTACK_MS = 1500;  // after that only over ~1.5 s (the limiter catches peaks)
+    const AGC_NO_BOOST_MS = 1500;       // a new video may only be turned down this long
 
     // one measured block (dB, already known not to be silence) → the gain in
-    // dB to apply now. Fast down, slow up, as broadcast levelers do: louder
-    // sound is followed at once, quieter sound over the averaging time — so a
-    // quiet stretch can't leave a big boost in place when it gets loud. And no
-    // boost at all while a new video settles: a quiet first moment must not
-    // boost the loud part right after it.
+    // dB to apply now. Faster down than up, as broadcast levelers do: louder
+    // sound is followed sooner than quieter sound, so a quiet stretch can't
+    // leave a big boost in place when it gets loud. A new video's louder
+    // sound is followed at once (a loud video mustn't play loud); once it has
+    // settled only over AGC_STEADY_ATTACK_MS, so a drum hit or a shout
+    // doesn't duck the whole video and pump back up after. And no boost at
+    // all while a new video settles: a quiet first moment must not boost the
+    // loud part right after it.
     function agcUpdate(agc, db, cfg, dtMs) {
         agc.heardMs += dtMs;
         if (agc.levelDb === null) {
             agc.levelDb = db;
         } else {
-            const tauMs = db > agc.levelDb ? AGC_ATTACK_MS : Math.min(cfg.smoothingS * 1000, agc.heardMs + 300);
+            const attackMs = agc.heardMs < AGC_NO_BOOST_MS ? AGC_ATTACK_MS : AGC_STEADY_ATTACK_MS;
+            const tauMs = db > agc.levelDb ? attackMs : Math.min(cfg.smoothingS * 1000, agc.heardMs + 300);
             agc.levelDb += Math.min(1, dtMs / tauMs) * (db - agc.levelDb);
         }
         const gainDb = agcGainDb(agc.levelDb, cfg);
         return agc.heardMs < AGC_NO_BOOST_MS ? Math.min(gainDb, 0) : gainDb;
     }
 
-    // gain (linear) a new video starts at, before its first measurement: at
-    // most startDb (e.g. -6 dB = half), lower if the previous video needed a
-    // bigger cut. Starting a bit quiet is harmless; starting loud isn't.
-    function agcStartGain(lastGain, startDb) {
-        return Math.min(lastGain, Math.pow(10, startDb / 20));
+    // gain in dB a new video starts at, before its first measurement: what
+    // the last few videos settled at (their median — videos in one feed are
+    // mostly mastered alike), at most startDb. Starting a bit quiet is
+    // harmless; starting loud isn't.
+    function agcStartDb(recentGainsDb, startDb) {
+        if (!recentGainsDb.length) return startDb;
+        const s = [...recentGainsDb].sort((a, b) => a - b);
+        const mid = s.length >> 1;
+        const median = s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+        return Math.min(startDb, median);
     }
 
     // Which video is this, for the page leveler's memory? A plain URL is the
@@ -123,6 +133,15 @@
     function agcVideoKey(src, duration) {
         if (src && !src.startsWith("blob:")) return src;
         return isFinite(duration) && duration > 0 ? "dur:" + duration.toFixed(2) : null;
+    }
+
+    // Has a player moved to another video? prev / now: { src, loads } (loads
+    // counts the player's loadstart events). A new source or a new load is a
+    // new video; anything else — a loop, a replay, a streamed player
+    // correcting its duration as it buffers (Douyin does, ~0.6 s in) — is
+    // the same one.
+    function agcIsNewVideo(prev, now) {
+        return prev.src !== now.src || prev.loads !== now.loads;
     }
 
     const AGC_MEMORY = 200;   // videos remembered per page
@@ -142,7 +161,7 @@
         return saved ? { track: { ...saved }, known: true } : { track: agcNew(), known: false };
     }
 
-    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartGain, agcVideoKey, agcSwitch };
+    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch };
     globalThis.pageLogic = api;
     if (typeof module !== "undefined") module.exports = api;
 })();
