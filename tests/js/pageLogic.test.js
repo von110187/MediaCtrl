@@ -107,13 +107,46 @@ test("agcUpdate returns the gain for the current level, once settled", () => {
     assert.strictEqual(agcUpdate(agc, -30, cfg, TICK), 10);
 });
 
-// a new video starts where the last few videos settled (their median), at
-// most at the start level — a loud video starting loud is what hurts
-test("agcStartDb starts where recent videos settled, at most at the start level", () => {
+// a new video starts like the louder of the last few videos (their lower
+// quartile gain), at most at the start level — a loud video starting loud is
+// what hurts; a quiet one starting quiet comes up within a tick or two
+test("agcStartDb starts like the louder recent videos, at most at the start level", () => {
     assert.strictEqual(agcStartDb([], -12), -12, "nothing heard yet");
-    assert.strictEqual(agcStartDb([-16, -18, -17], -12), -17, "median of recent videos");
-    assert.strictEqual(agcStartDb([-16, -18, -2, -17], -12), -16.5, "one odd video doesn't decide it");
+    assert.strictEqual(agcStartDb([-16, -18, -17], -12), -18, "few videos: the loudest");
+    assert.strictEqual(agcStartDb([-15.2, -12.3, -10.4, 4.9, -13.4], -12), -13.4, "a mixed feed (Douyin trace)");
+    assert.strictEqual(agcStartDb([-16, -18, -40, -17, -15], -12), -18, "one very loud video doesn't decide it");
     assert.strictEqual(agcStartDb([6, 10, 4], -12), -12, "quiet videos' boost isn't carried");
+});
+
+// many clips open with near-silence or a fade-in: that must not open the
+// gain above where the video started, or the real sound right after plays
+// up to 14 dB too loud (Douyin trace: -50, -20 dB, then -12, -10 dB)
+test("agcUpdate: a fade-in doesn't raise a new video above its start gain", () => {
+    const agc = agcNew();
+    agc.startDb = -12;
+    for (const db of [-50, -20.4, -12.6, -9.6, -11.1]) {
+        const g = agcUpdate(agc, db, cfg, TICK);
+        assert.ok(g <= -12, `block ${db}: gain ${g.toFixed(1)}`);
+    }
+});
+
+test("agcUpdate: a quiet video still comes up once settled", () => {
+    const agc = agcNew();
+    agc.startDb = -12;
+    feed(agc, -36, 14);                  // the first 1.4 s: held at the start gain
+    assert.strictEqual(agcUpdate(agc, -36, cfg, TICK), 16, "then its full boost");
+});
+
+// while a new video settles its level is the power average of everything
+// heard so far, so one quiet gap or one loud blip early on doesn't swing the
+// gain (blocks from a Douyin trace: the old fast follower moved the gain by
+// up to 4 dB a tick here)
+test("agcUpdate: a new video's level is steady through gaps and blips", () => {
+    const agc = agcNew();
+    const gains = [-11.8, -5.3, -9.2, -17.3, -41, -7.4, -5.8, -11.3].map((db) => agcUpdate(agc, db, cfg, TICK));
+    for (let i = 2; i < gains.length; i++) {
+        assert.ok(Math.abs(gains[i] - gains[i - 1]) < 1.5, `tick ${i}: ${gains[i - 1].toFixed(1)} -> ${gains[i].toFixed(1)}`);
+    }
 });
 
 // telling videos apart: a plain URL is the video; streamed (blob:) players get
@@ -150,6 +183,22 @@ test("agcSwitch: scrolling back restores the video's settled level", () => {
     assert.strictEqual(back.track.levelDb, -12);
     back.track.levelDb = -30;                                         // it keeps measuring...
     assert.strictEqual(cache.get("dur:10.00").levelDb, -12, "...without changing the stored copy");
+});
+
+// a duration key can match a different clip of the same length: a restored
+// level must re-check itself fast and without boosting, like a new video,
+// for its first moment — a loud clip mistaken for a quiet remembered one
+// mustn't play boosted for seconds
+test("agcSwitch: a restored level re-checks itself fast at first", () => {
+    const cache = new Map();
+    agcSwitch(cache, "dur:15.30", { levelDb: -32, heardMs: 9000 }, "dur:20.00");  // a quiet clip, +12 dB
+    const back = agcSwitch(cache, "dur:20.00", agcNew(), "dur:15.30");
+    assert.ok(back.track.heardMs >= 1000, "still counts as heard: " + back.track.heardMs);
+    assert.ok(agcUpdate(back.track, -32, cfg, TICK) <= 0, "no boost in its first moment");
+    feed(back.track, -8, 3);                                                       // it's actually loud
+    assert.ok(back.track.levelDb > -14, "a loud clip is followed fast: " + back.track.levelDb);
+    feed(back.track, -32, 50);
+    assert.ok(agcUpdate(back.track, -32, cfg, TICK) > 0, "boost allowed again once checked");
 });
 
 test("agcSwitch: a barely-heard video isn't remembered", () => {
