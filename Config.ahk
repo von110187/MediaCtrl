@@ -46,7 +46,9 @@ global CONFIG := {
     ; to sources Web Audio can hear (all three sites); others play as they are.
     ;   targetDb   — loudness every video is brought to (RMS dBFS; higher = louder)
     ;   maxBoostDb / maxCutDb — how far a video may be turned up / down
-    ;   smoothingS — seconds of sound averaged (higher = slower, steadier)
+    ;   smoothingS — how slowly a video is turned back up when it gets
+    ;                quieter, in seconds (higher = slower, steadier); louder
+    ;                sound is followed over a fixed ~1.5 s
     ;   silenceDb  — quieter than this is a gap: the gain is held
     ;   limiterDb  — peaks above this are squashed
     ;   startDb    — a video not heard before starts at most this loud

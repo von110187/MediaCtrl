@@ -127,12 +127,14 @@
                                    // AGC loop doesn't disturb isActuallyAdvancing's sampling
     const agcs = new WeakMap();    // video -> { analyser, gain, buf, track, key, src, loads, seenLoads }
     const agcMemory = new Map();   // video key -> its settled level (agcSwitch)
-    const agcRecent = new Map();   // video key -> its settled gain in dB, newest last
+    const agcRecent = new Map();   // video key -> its settled level in dB, newest last
+    let agcResuming = false;       // an AudioContext resume() is pending
 
-    // linear gain an unheard video starts at (pageLogic.agcStartDb)
+    // linear gain an unheard video starts at (pageLogic.agcStartDb); the
+    // recent levels' gains are worked out now, for the current target
     function agcStartGain() {
-        const db = agcStartDb([...agcRecent.values()], leveler.startDb ?? AGC_DEFAULT_START_DB);
-        return Math.pow(10, db / 20);
+        const gains = [...agcRecent.values()].map((levelDb) => agcGainDb(levelDb, leveler));
+        return Math.pow(10, agcStartDb(gains, leveler.startDb ?? AGC_DEFAULT_START_DB) / 20);
     }
 
     // a video that has settled (past its no-boost start) tells the next
@@ -140,7 +142,7 @@
     function agcRecordSettled(agc) {
         if (!agc || agc.key === null || agc.track.heardMs < 1500) return;
         agcRecent.delete(agc.key);
-        agcRecent.set(agc.key, agcGainDb(agc.track.levelDb, leveler));
+        agcRecent.set(agc.key, agc.track.levelDb);
         if (agcRecent.size > AGC_RECENT) agcRecent.delete(agcRecent.keys().next().value);
     }
 
@@ -159,9 +161,13 @@
                 // a new AudioContext starts suspended even where it's allowed to
                 // play, and runs a moment later: take the video over the moment
                 // it does, not at the next report — until then it plays unlevelled.
-                // Not allowed yet (no user gesture): this waits, and the next
-                // report asks again.
-                audioCtx.resume().then(() => levelVideo(video)).catch(() => {});
+                // Not allowed yet (no user gesture): the one pending resume
+                // waits for it, and then takes over whichever video is active.
+                if (!agcResuming) {
+                    agcResuming = true;
+                    audioCtx.resume().then(() => levelVideo(activeVideo ?? video))
+                        .catch(() => {}).finally(() => { agcResuming = false; });
+                }
                 return;
             }
             const analyser = audioCtx.createAnalyser();
@@ -196,7 +202,7 @@
             // react the moment a player loads or starts a video, not on the next tick
             video.addEventListener("loadedmetadata", () => agcCheckVideo(video));
             // a video starting is the one being watched: measure it from its
-            // first moment, not from the next report (~0.4 s later)
+            // first moment, not from the next report (up to a few hundred ms later)
             video.addEventListener("playing", () => {
                 agcSetActive(video);
                 agcCheckVideo(video);
@@ -209,7 +215,10 @@
         }
     }
 
+    // set a video's gain now, as where it starts: it won't rise above this
+    // until it has settled (pageLogic.agcUpdate)
     function agcSetGain(agc, value) {
+        agc.track.startDb = 20 * Math.log10(value);
         agc.gain.gain.cancelScheduledValues(audioCtx.currentTime);
         agc.gain.gain.setValueAtTime(value, audioCtx.currentTime);
     }
@@ -239,7 +248,11 @@
         agc.key = key;
         agc.src = src;
         agc.seenLoads = agc.loads;
-        agcSetGain(agc, next.known ? Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20) : agcStartGain());
+        // a known video starts at its level, but never louder than an unknown
+        // one would: its duration key may belong to another clip, and its
+        // boost comes back once it's re-checked (pageLogic.agcSwitch)
+        const start = agcStartGain();
+        agcSetGain(agc, next.known ? Math.min(Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20), start) : start);
     }
 
     function agcTick() {
