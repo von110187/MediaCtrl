@@ -31,7 +31,7 @@ Windows automation for watching videos and listening to Spotify, written in **Au
 
 **Spotify** *(desktop app)*. If a track is still playing but silent in its last 10 seconds, it skips to the next one.
 
-**Speaker bass** *(optional)*. With a Harman Kardon speaker, a bass-boost preset (Peace / Equalizer APO) is on while one of your games is focused.
+**Speaker bass** *(optional)*. With a Harman Kardon speaker, a bass-boost preset (Peace / Equalizer APO) is on while one of your games is running (switching apps doesn't change it).
 
 **Speaker keep-awake** *(optional)*. Speakers like the SoundSticks 4 go to standby after about 10 minutes of silence and cut off the start of the next sound. This plays a short tone every few minutes while nothing else is playing: 19 kHz by default, above what most adults hear.
 
