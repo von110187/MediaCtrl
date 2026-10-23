@@ -11,8 +11,11 @@ class Decide {
 
     ; manualExitPage: the pageId the manual exit belongs to — another video
     ; page isn't blocked by it, the same page still is after an app switch
+    ; playablePage: the last page seen with a video — only that page losing
+    ; its video counts as "left", so a page that never had one keeps a
+    ; fullscreen the user entered there (e.g. Bilibili live)
     static New() {
-        return {manualExit: false, manualExitPage: "", notPlayableTicks: 0, lastKeys: false}
+        return {manualExit: false, manualExitPage: "", notPlayableTicks: 0, lastKeys: false, playablePage: ""}
     }
 
     static _Result(state, enter, exit, keys) {
@@ -50,8 +53,10 @@ class Decide {
             if state.notPlayableTicks < Decide.MISS_TICKS
                 return Decide._Result(state, false, false, state.lastKeys)
             state.manualExit := false
-            return Decide._Result(state, false, inp.fs == "fullscreen", false)
+            left := state.playablePage != "" && state.playablePage == inp.pageId
+            return Decide._Result(state, false, left && inp.fs == "fullscreen", false)
         }
+        state.playablePage := inp.pageId
 
         ; typing in a text field on the page: let the letters through, and
         ; don't yank the page into fullscreen mid-typing
