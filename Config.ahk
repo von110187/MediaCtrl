@@ -25,10 +25,14 @@ global CONFIG := {
     ; active video is found by which one is actually playing. Its other button,
     ; .xgplayer-page-full-screen, is window-only "web fullscreen" that the
     ; browser doesn't report, so it isn't used.
+    ; fsTarget — fullscreen this element directly instead of clicking
+    ; fsButton. Douyin: #slidelist is its own feed fullscreen (what its h key
+    ; does), which survives Lossless Scaling starting — the player button's
+    ; fullscreen drops out — and, unlike h, asking twice can't toggle it off.
     SITES: {
         youtube:  { match: "youtube.com",  fsButton: ".ytp-fullscreen-button", playerSelector: "#movie_player",         fsKey: "f" },
         bilibili: { match: "bilibili.com", fsButton: ".bpx-player-ctrl-full",  playerSelector: ".bpx-player-container", fsKey: "f" },
-        douyin:   { match: "douyin.com",   fsButton: ".xgplayer-fullscreen",   playerSelector: "",                      fsKey: "h" },
+        douyin:   { match: "douyin.com",   fsButton: ".xgplayer-fullscreen",   playerSelector: "",                      fsKey: "h", fsTarget: "#slidelist" },
     },
 
     TICK_MS:            250,    ; video evaluation timer

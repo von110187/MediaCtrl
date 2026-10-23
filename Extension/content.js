@@ -89,6 +89,7 @@
 
     // element requestFullscreen() targets when the site button isn't usable
     function fullscreenTarget(site, video) {
+        if (site?.fsTarget) return document.querySelector(site.fsTarget);
         if (site?.playerSelector) return document.querySelector(site.playerSelector);
         return video?.parentElement ?? null;
     }
@@ -364,7 +365,8 @@
     async function enterFullscreenNow() {
         const site = currentSite();
         const video = getActiveVideo(site);
-        const button = findFsButton(site, video);
+        // a site with fsTarget is fullscreened directly, not through its button
+        const button = site?.fsTarget ? null : findFsButton(site, video);
         if (button) {
             button.click();
             if (await waitForFullscreen(BUTTON_WAIT_MS)) return;

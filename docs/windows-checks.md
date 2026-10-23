@@ -212,3 +212,14 @@ Problems scrolling Douyin, and what fixed each one (all checked by the user):
   unlevelled: now taken over on `loadedmetadata` / `play`. And with Douyin's
   own volume turned up: loud sound is now followed within ~0.2 s (fast down,
   slow up), and no boost is allowed in a video's first 1.5 s.
+
+## 15. Douyin: enter-then-exit on opening, with Lossless on — 2026-10-24: FIXED
+
+Traced: clicking Douyin's player fullscreen button entered player fullscreen
+(`div.xgplayer`), which dropped out as soon as Lossless Scaling started
+(with Lossless off it stayed). Douyin's own feed fullscreen (`#slidelist`,
+what its `h` key does) survives Lossless — but `h` toggles, and a slow first
+press plus the 1 s retry press toggled it straight back out. Fix: Douyin's
+`fsTarget: "#slidelist"` — the extension fullscreens that element directly
+(F19 nudge as usual; asking twice can't toggle). Checked: enters within
+40–190 ms every time, stays with Lossless on, Douyin looks and scrolls normally.
