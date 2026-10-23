@@ -29,21 +29,15 @@ _UpdateProgramState() {
 }
 
 _OnProgramChanged() {
-    global State, CONFIG
-
-    ; Harman Kardon: game open + focused → bass on; else off
-    if _IsHarmanSpeaker()
-        _UpdateHarmanBass()
-
     VideoEvaluate(false)
 }
 
+; Harman Kardon: bass on while one of the games is running, off when none is.
+; Switching apps doesn't change it (MonitorGame checks every 2 s).
 _UpdateHarmanBass() {
-    global State, CONFIG
-    prog := State.currentProgram
     shouldOn := false
     for game in SETTINGS.speaker.gameList {
-        if ProcessExist(game . ".exe") && InStr(prog, game) {
+        if ProcessExist(game . ".exe") {
             shouldOn := true
             break
         }

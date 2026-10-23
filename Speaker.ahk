@@ -1,6 +1,6 @@
 ; ============ SPEAKER ============
 ; Speaker is detected ONCE at startup — we don't monitor mid-session changes.
-; Harman Kardon: bass follows game state (on when in game, off otherwise).
+; Harman Kardon: bass is on while one of the games is running, off otherwise.
 
 InitSpeaker() {
     global State, CONFIG
