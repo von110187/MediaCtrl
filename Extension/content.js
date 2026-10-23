@@ -7,7 +7,7 @@
     if (window.__mediaCtrlInjected) return;
     window.__mediaCtrlInjected = true;
 
-    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch } = globalThis.pageLogic;
+    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStart, agcVideoKey, agcIsNewVideo, agcSwitch } = globalThis.pageLogic;
 
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
@@ -104,9 +104,10 @@
     // remembered for the page (agcSwitch), so:
     //   - the same video looping or replaying keeps its level;
     //   - a video scrolled back to starts straight at its known level;
-    //   - an unknown one starts where the last few videos settled, at most at
-    //     leveler.startDb (quiet, so a loud video never starts loud), and
-    //     settles within about half a second.
+    //   - an unknown one starts a little under where the louder recent
+    //     videos settled (pageLogic.agcStart), so it follows the site's own
+    //     volume slider; the page's first video starts at leveler.startDb.
+    //     It settles within about 1.5 s.
     // Feeds like Douyin reuse a few players as you scroll, so this is checked
     // whenever a player loads or starts a video, and for the active player on
     // every tick. Only that player's own gain changes, so a background player
@@ -129,12 +130,15 @@
     const agcMemory = new Map();   // video key -> its settled level (agcSwitch)
     const agcRecent = new Map();   // video key -> its settled level in dB, newest last
     let agcResuming = false;       // an AudioContext resume() is pending
+    let agcSiteVolume = null;      // the site's own volume (slider) last seen
 
-    // linear gain an unheard video starts at (pageLogic.agcStartDb); the
-    // recent levels' gains are worked out now, for the current target
+    // where an unheard video starts and how far it may rise while settling
+    // (pageLogic.agcStart): { gain (linear), capDb }. The recent levels'
+    // gains are worked out now, for the current target.
     function agcStartGain() {
         const gains = [...agcRecent.values()].map((levelDb) => agcGainDb(levelDb, leveler));
-        return Math.pow(10, agcStartDb(gains, leveler.startDb ?? AGC_DEFAULT_START_DB) / 20);
+        const start = agcStart(gains, leveler.startDb ?? AGC_DEFAULT_START_DB);
+        return { gain: Math.pow(10, start.startDb / 20), capDb: start.capDb };
     }
 
     // a video that has settled (past its no-boost start) tells the next
@@ -173,7 +177,7 @@
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 4096;
             const gain = audioCtx.createGain();
-            gain.gain.value = agcStartGain();
+            gain.gain.value = agcStartGain().gain;
             const limiter = audioCtx.createDynamicsCompressor();
             limiter.threshold.value = leveler.limiterDb;
             limiter.knee.value = 0;
@@ -199,6 +203,19 @@
                           key: null, src: null, loads: 0, seenLoads: 0 };
             agcs.set(video, agc);
             video.addEventListener("loadstart", () => agc.loads++);
+            // the site's volume slider moved: what the recent videos settled
+            // at no longer says where the next one should start — forget it,
+            // so the next new video starts at the safe first level. Only the
+            // watched video counts (the slider acts on it; Douyin also sets
+            // up background players' volume), and mute / unmute isn't a change.
+            video.addEventListener("volumechange", () => {
+                if (video !== activeVideo) return;
+                if (agcSiteVolume !== null && Math.abs(video.volume - agcSiteVolume) > 0.01) {
+                    agcRecent.clear();
+                    agcMemory.clear();
+                }
+                agcSiteVolume = video.volume;
+            });
             // react the moment a player loads or starts a video, not on the next tick
             video.addEventListener("loadedmetadata", () => agcCheckVideo(video));
             // a video starting is the one being watched: measure it from its
@@ -206,7 +223,7 @@
             video.addEventListener("playing", () => {
                 agcSetActive(video);
                 agcCheckVideo(video);
-                if (agc.track.heardMs === 0) agcSetGain(agc, agcStartGain());
+                if (agc.track.heardMs === 0) { const s = agcStartGain(); agcSetGain(agc, s.gain, s.capDb); }
             });
             agcCheckVideo(video);
             if (!agcTimer) agcTimer = setInterval(agcTick, AGC_TICK_MS);
@@ -215,10 +232,10 @@
         }
     }
 
-    // set a video's gain now, as where it starts: it won't rise above this
-    // until it has settled (pageLogic.agcUpdate)
-    function agcSetGain(agc, value) {
-        agc.track.startDb = 20 * Math.log10(value);
+    // set a video's gain now, as where it starts; until it has settled it
+    // won't rise above capDb (default: where it starts) — pageLogic.agcUpdate
+    function agcSetGain(agc, value, capDb = 20 * Math.log10(value)) {
+        agc.track.startDb = capDb;
         agc.gain.gain.cancelScheduledValues(audioCtx.currentTime);
         agc.gain.gain.setValueAtTime(value, audioCtx.currentTime);
     }
@@ -252,7 +269,10 @@
         // one would: its duration key may belong to another clip, and its
         // boost comes back once it's re-checked (pageLogic.agcSwitch)
         const start = agcStartGain();
-        agcSetGain(agc, next.known ? Math.min(Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20), start) : start);
+        if (next.known)
+            agcSetGain(agc, Math.min(Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20), start.gain));
+        else
+            agcSetGain(agc, start.gain, start.capDb);
     }
 
     function agcTick() {

@@ -51,9 +51,9 @@ global CONFIG := {
     ;                sound is followed over a fixed ~1.5 s
     ;   silenceDb  — quieter than this is a gap: the gain is held
     ;   limiterDb  — peaks above this are squashed
-    ;   startDb    — a video not heard before starts at most this loud
-    ;                (-9 = about a third), then goes up or down once
-    ;                measured; videos scrolled back to start at their known level
+    ;   startDb    — where the first video on a page starts (-9 = about a
+    ;                third); later new videos start just under where recent
+    ;                ones settled, and scrolled-back ones at their known level
     PAGE_LEVELER: {
         enabled:    true,
         targetDb:   -20,
