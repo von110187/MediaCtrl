@@ -91,7 +91,8 @@ Test_manual_exit_only_for_that_page() {
 
 Test_leave_page_needs_three_ticks() {
     s := Decide.New()
-    inp := With({playable: false, fs: "fullscreen"})
+    Decide.Evaluate(s, With({fs: "fullscreen"}), true)  ; a video page...
+    inp := With({playable: false, fs: "fullscreen"})     ; ...that lost its video
     Assert(Decide.Evaluate(s, inp, true).exit == false)
     Loop 10
         Decide.Evaluate(s, inp, false)
@@ -121,6 +122,15 @@ Test_disconnected_freezes() {
     Assert(s.notPlayableTicks == 0)
 }
 
+; a page that never had a video (e.g. Bilibili live): a fullscreen the user
+; entered there is theirs — never exited by the leave-page rule
+Test_never_playable_page_keeps_manual_fullscreen() {
+    s := Decide.New()
+    inp := With({playable: false, fs: "fullscreen", pageId: "live"})
+    Loop 10
+        Assert(Decide.Evaluate(s, inp, true).exit == false)
+}
+
 ; keys off while disconnected: they can't do anything, and Esc should reach
 ; Chrome itself
 Test_disconnected_turns_keys_off() {
@@ -141,5 +151,5 @@ TESTS.Push(Test_enter_when_ready_and_playing, Test_no_enter_until_ready, Test_no
     , Test_manual_exit_blocks_reentry, Test_page_change_exit_allows_reentry, Test_paused_in_fullscreen_keeps_keys
     , Test_stopped_not_fullscreen_clears_manual, Test_switch_app_keeps_fullscreen, Test_manual_exit_survives_app_switch
     , Test_manual_exit_survives_tab_switch, Test_manual_exit_only_for_that_page, Test_leave_page_needs_three_ticks
-    , Test_monitor_off_disables_all, Test_editable_focus_turns_keys_off, Test_disconnected_freezes
+    , Test_never_playable_page_keeps_manual_fullscreen, Test_monitor_off_disables_all, Test_editable_focus_turns_keys_off, Test_disconnected_freezes
     , Test_disconnected_turns_keys_off, Test_disconnected_outside_chrome_keys_off)
