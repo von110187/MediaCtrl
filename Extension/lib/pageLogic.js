@@ -101,7 +101,8 @@
     // video and pump back up after; quieter sound over cfg.smoothingS, so a
     // quiet stretch can't leave a big boost in place when it gets loud. And
     // while a new video settles the gain never rises above where it started
-    // (agc.startDb, set by the caller; never above 0 dB): many clips open
+    // (agc.startDb, set by the caller from agcStart's capDb; never above
+    // 0 dB): many clips open
     // with near-silence or a fade-in, and opening the gain for it would play
     // the real sound right after it too loud. A quiet video comes up once
     // it has settled.
@@ -123,15 +124,24 @@
         return agc.heardMs < AGC_NO_BOOST_MS ? Math.min(gainDb, 0, agc.startDb ?? 0) : gainDb;
     }
 
-    // gain in dB a new video starts at, before its first measurement: what
-    // the louder of the last few videos settled at (the lower quartile of
-    // their gains, so one odd video doesn't decide it), at most startDb.
-    // Starting a bit quiet is harmless — a quiet video comes up within a tick
-    // or two; starting loud isn't.
-    function agcStartDb(recentGainsDb, startDb) {
-        if (!recentGainsDb.length) return startDb;
-        const s = [...recentGainsDb].sort((a, b) => a - b);
-        return Math.min(startDb, s[s.length >> 2]);
+    const AGC_START_MARGIN_DB = 3;
+
+    // Where a new video starts, before its first measurement, in dB:
+    //   startDb — a margin under what the louder of the last few videos
+    //     settled at (the lower quartile of their gains, so one odd video
+    //     doesn't decide it). That follows the site's own volume slider:
+    //     slider high, the sound arrives loud and videos settle at a big cut,
+    //     so the next one starts quiet; slider low, they settle at about none,
+    //     so the next one starts near full level instead of at a fixed cut
+    //     and doesn't jump up when it has settled;
+    //   capDb — how far it may rise while settling (agcUpdate): up to that
+    //     recent level, never a real boost, never above 0 dB.
+    // With nothing heard yet on the page, both are firstDb (Config startDb).
+    function agcStart(recentGainsDb, firstDb) {
+        if (!recentGainsDb.length) return { startDb: firstDb, capDb: firstDb };
+        const sorted = [...recentGainsDb].sort((a, b) => a - b);
+        const capDb = Math.min(0, sorted[sorted.length >> 2]);
+        return { startDb: Math.round((capDb - AGC_START_MARGIN_DB) * 10) / 10, capDb };
     }
 
     // Which video is this, for the page leveler's memory? A plain URL is the
@@ -174,7 +184,7 @@
         return { track: { ...saved, heardMs: Math.min(saved.heardMs, AGC_NO_BOOST_MS - AGC_RECHECK_MS) }, known: true };
     }
 
-    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch };
+    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStart, agcVideoKey, agcIsNewVideo, agcSwitch };
     globalThis.pageLogic = api;
     if (typeof module !== "undefined") module.exports = api;
 })();
