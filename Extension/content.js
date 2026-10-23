@@ -119,7 +119,7 @@
     // "leveled" flag says whether this page's video is levelled (F6 shows it).
 
     const AGC_TICK_MS = 100;
-    const AGC_DEFAULT_START_DB = -12;
+    const AGC_DEFAULT_START_DB = -9;
     let audioCtx = null;
     let agcTimer = null;
     const AGC_RECENT = 5;          // settled videos a new video's start gain is taken from
