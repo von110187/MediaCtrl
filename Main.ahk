@@ -22,6 +22,11 @@
 
 ; ============ STARTUP ============
 
+; PgUp/PgDn, Home/End, media keys — only the groups switched on in the
+; settings. First, so they work the moment the script loads (the speaker
+; setup below can wait for Peace, and the keep-awake tone takes a moment).
+InitPersonalKeys()
+
 ; Track speaker once at startup — we don't monitor changes mid-session
 InitSpeaker()
 InitKeepAwake()  ; [speaker] keepAwake: a quiet tone so the speaker doesn't go to standby
