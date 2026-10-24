@@ -20,29 +20,27 @@ F7:: {
 }
 
 ; ── Personal key groups ──────────────────────────────────────────────────────
-; Each group is on only if mediactrl_settings.ini [keys] says so; otherwise the
-; keys do what Windows normally does (PgUp scrolls, Home/End move, ...).
-
-; Volume
-#HotIf SETTINGS.keys.volume
-F13::  Volume_Down
-F14::  Volume_Up
-PgDn:: Volume_Down
-PgUp:: Volume_Up
-
-; Brightness via Twinkle Tray (its hotkeys set to F15 / F16)
-#HotIf SETTINGS.keys.brightness
-End::  Send("{F15}")
-Home:: Send("{F16}")
-
-; Spotify media keys
-#HotIf SETTINGS.keys.spotify
-$Media_Play_Pause:: _SongTogglePlayPause()
-$Media_Next::       _SongSkipPrevious()   ; next button → skip previous
-$Insert::           _SongSkipNext()
-
-; Immediate shutdown, no prompt
-#HotIf SETTINGS.keys.shutdown
-$Media_Prev::       Run("shutdown.exe /s /f /t 0")
-
-#HotIf
+; Each group is registered at startup only if mediactrl_settings.ini [keys]
+; says so; otherwise the keys do what Windows normally does (PgUp scrolls,
+; Home/End move, ...). Not #HotIf: a #HotIf condition is checked by the
+; script's main thread on every press, and while that thread was busy (e.g.
+; reading Spotify's media session) the key slipped through as a plain PgUp.
+InitPersonalKeys() {
+    if SETTINGS.keys.volume {
+        Hotkey("*F13",  (*) => Send("{Blind}{Volume_Down}"))
+        Hotkey("*F14",  (*) => Send("{Blind}{Volume_Up}"))
+        Hotkey("*PgDn", (*) => Send("{Blind}{Volume_Down}"))
+        Hotkey("*PgUp", (*) => Send("{Blind}{Volume_Up}"))
+    }
+    if SETTINGS.keys.brightness {  ; Twinkle Tray, its hotkeys set to F15 / F16
+        Hotkey("End",  (*) => Send("{F15}"))
+        Hotkey("Home", (*) => Send("{F16}"))
+    }
+    if SETTINGS.keys.spotify {
+        Hotkey("$Media_Play_Pause", (*) => _SongTogglePlayPause())
+        Hotkey("$Media_Next",       (*) => _SongSkipPrevious())  ; next button → skip previous
+        Hotkey("$Insert",           (*) => _SongSkipNext())
+    }
+    if SETTINGS.keys.shutdown  ; immediate shutdown, no prompt
+        Hotkey("$Media_Prev", (*) => Run("shutdown.exe /s /f /t 0"))
+}
