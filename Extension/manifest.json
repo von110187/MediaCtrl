@@ -12,6 +12,13 @@
             "js": ["lib/pageLogic.js", "content.js"],
             "run_at": "document_idle",
             "all_frames": false
+        },
+        {
+            "matches": ["*://*.douyin.com/*"],
+            "js": ["douyinGuard.js"],
+            "run_at": "document_start",
+            "world": "MAIN",
+            "all_frames": false
         }
     ]
 }
