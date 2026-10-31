@@ -44,6 +44,9 @@ InitKeepAwake() {
     catch
         return
     SetTimer(_KeepAwakeTick, Max(1, s.keepAwakeMinutes) * 60000)
+    ; once now as well: at boot the speaker has been asleep, and the first
+    ; timed tone is keepAwakeMinutes away (PlaySound is async, so no wait)
+    _KeepAwakeTick()
 }
 
 _KeepAwakeTick() {
