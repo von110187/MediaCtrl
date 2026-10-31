@@ -344,10 +344,25 @@ _SendVideoConfig() {
     VideoEnv.bridgeSend({type: "config", sites: CONFIG.SITES, leveler: leveler})
 }
 
-; - / = : every video's loudness one step down / up (steps = -1 / +1)
+; is the page on a site the page leveler runs on (PAGE_LEVELER.sites)?
+_LevelerSite() {
+    global CONFIG, State
+    name := State.page ? State.page.site : ""
+    for site in CONFIG.PAGE_LEVELER.sites
+        if name == site
+            return true
+    return false
+}
+
+; - / = : every video's loudness one step down / up (steps = -1 / +1).
+; Not a leveler site: they're the site's own - / = keys.
 VideoLevelStep(steps) {
     global CONFIG, State
-    db := Max(CONFIG.LEVEL_MIN_DB, Min(CONFIG.LEVEL_MAX_DB, State.levelDb + steps * CONFIG.LEVEL_STEP_DB))
+    if !_LevelerSite() {
+        _SendToChrome(steps < 0 ? "-" : "=")
+        return
+    }
+    db :=Max(CONFIG.LEVEL_MIN_DB, Min(CONFIG.LEVEL_MAX_DB, State.levelDb + steps * CONFIG.LEVEL_STEP_DB))
     if db != State.levelDb {
         State.levelDb := db
         VideoEnv.saveLevel(db)

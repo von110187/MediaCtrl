@@ -47,7 +47,8 @@ global CONFIG := {
     ; measured and its gain moved toward targetDb, so every video plays at
     ; about the same level — quiet ones up, loud ones down — with a limiter
     ; catching peaks. Sent to the extension with the sites. It only attaches
-    ; to sources Web Audio can hear (all three sites); others play as they are.
+    ; to sources Web Audio can hear; others play as they are.
+    ;   sites      — the SITES it runs on; elsewhere video plays untouched
     ;   targetDb   — loudness every video is brought to (RMS dBFS; higher = louder)
     ;   maxBoostDb / maxCutDb — how far a video may be turned up / down
     ;   smoothingS — how slowly a video is turned back up when it gets
@@ -55,11 +56,14 @@ global CONFIG := {
     ;                sound is followed over a fixed ~1.5 s
     ;   silenceDb  — quieter than this is a gap: the gain is held
     ;   limiterDb  — peaks above this are squashed
-    ;   startDb    — where the first video on a page starts (-9 = about a
-    ;                third); later new videos start just under where recent
-    ;                ones settled, and scrolled-back ones at their known level
+    ;   startDb    — where new videos start (-9 = about a third) until the
+    ;                extension has learnt how loud the site's videos are on
+    ;                average; then they start at that average's gain (F6
+    ;                shows both), so most barely move. Learnt again after
+    ;                the site's own volume slider moves
     PAGE_LEVELER: {
         enabled:    true,
+        sites:      ["douyin"],
         targetDb:   -20,
         maxBoostDb: 18,
         maxCutDb:   18,
@@ -68,8 +72,9 @@ global CONFIG := {
         limiterDb:  -3,
         startDb:    -9,
     },
-    ; - / = in video mode move targetDb by this much, within these limits; the
-    ; level you pick is remembered in mediactrl_settings.ini ([leveler])
+    ; - / = in video mode on a leveler site move targetDb by this much, within
+    ; these limits (elsewhere they're the site's own keys); the level you pick
+    ; is remembered in mediactrl_settings.ini ([leveler])
     LEVEL_STEP_DB: 2,
     LEVEL_MIN_DB:  -40,
     LEVEL_MAX_DB:  -6,

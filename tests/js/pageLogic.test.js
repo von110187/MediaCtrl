@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStart, agcVideoKey, agcIsNewVideo, agcSwitch } = require("../../Extension/lib/pageLogic.js");
+const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch } = require("../../Extension/lib/pageLogic.js");
 
 const sites = {
     youtube: { match: "youtube.com" },
@@ -107,30 +107,6 @@ test("agcUpdate returns the gain for the current level, once settled", () => {
     assert.strictEqual(agcUpdate(agc, -30, cfg, TICK), 10);
 });
 
-// a new video starts a little under where the louder of the last few videos
-// settled (their lower quartile gain, minus a 3 dB margin), so it follows the
-// site's own volume slider: loud (slider high) → a big cut, quiet (slider
-// low) → about none. While settling it may rise to that recent level, never
-// above it and never above 0 dB. With nothing heard yet: the fixed first level.
-test("agcStart: nothing heard yet uses the first level", () => {
-    assert.deepStrictEqual(agcStart([], -9), { startDb: -9, capDb: -9 });
-});
-
-test("agcStart follows the recent videos, a margin under the louder ones", () => {
-    assert.deepStrictEqual(agcStart([-16, -18, -17], -9), { startDb: -21, capDb: -18 }, "few videos: the loudest");
-    assert.deepStrictEqual(agcStart([-15.2, -12.3, -10.4, 4.9, -13.4], -9), { startDb: -16.4, capDb: -13.4 }, "a mixed feed (Douyin trace)");
-    assert.deepStrictEqual(agcStart([-16, -18, -40, -17, -15], -9), { startDb: -21, capDb: -18 }, "one very loud video doesn't decide it");
-});
-
-test("agcStart: a quiet site slider means a start near full level, not the fixed first level", () => {
-    // Douyin at 35 %: recent videos settled with little or no cut
-    assert.deepStrictEqual(agcStart([-1, 2, 0, -2, 1], -9), { startDb: -4, capDb: -1 });
-});
-
-test("agcStart never starts or settles boosted", () => {
-    assert.deepStrictEqual(agcStart([6, 10, 4], -9), { startDb: -3, capDb: 0 });
-});
-
 // many clips open with near-silence or a fade-in: that must not open the
 // gain above where the video started, or the real sound right after plays
 // up to 14 dB too loud (Douyin trace: -50, -20 dB, then -12, -10 dB)
@@ -143,10 +119,11 @@ test("agcUpdate: a fade-in doesn't raise a new video above its start gain", () =
     }
 });
 
-test("agcUpdate: a quiet video still comes up once settled", () => {
+test("agcUpdate: a quiet video comes up after 0.7 s of sound", () => {
     const agc = agcNew();
     agc.startDb = -12;
-    feed(agc, -36, 14);                  // the first 1.4 s: held at the start gain
+    feed(agc, -36, 6);                   // the first 0.6 s: held at the start gain
+    assert.ok(agc.levelDb < -35);
     assert.strictEqual(agcUpdate(agc, -36, cfg, TICK), 16, "then its full boost");
 });
 
@@ -256,12 +233,30 @@ test("agcUpdate: follows a quieter sound slowly", () => {
 
 // While a new video settles it may only be turned down, never up: a quiet
 // first moment must not leave a boost in place for the loud part after it
-test("agcUpdate: no boost in a new video's first 1.5 s", () => {
+test("agcUpdate: no boost in a new video's first 0.7 s of sound", () => {
     const agc = agcNew();
-    feed(agc, -40, 10);                  // 1 s of a quiet intro
+    feed(agc, -40, 5);                   // 0.5 s of a quiet intro
     assert.strictEqual(agcUpdate(agc, -40, cfg, TICK), 0, "no boost yet");
-    feed(agc, -40, 10);                  // past 1.5 s
-    assert.ok(agcUpdate(agc, -40, cfg, TICK) > 0, "boost allowed after settling");
+    assert.ok(agcUpdate(agc, -40, cfg, TICK) > 0, "boost allowed after 0.7 s");
     const loud = agcNew();
     assert.ok(agcUpdate(loud, -5, cfg, TICK) < 0, "cuts are allowed at once");
+});
+
+// the running average of how loud the site's videos are: the first video
+// sets it, each later one moves it a twentieth of the way
+test("agcAverage: starts at the first video, then moves slowly", () => {
+    assert.strictEqual(agcAverage(null, -16), -16);
+    assert.strictEqual(agcAverage(-16, -36), -17, "one quiet clip barely moves it");
+    let avg = -16;
+    for (let i = 0; i < 60; i++) avg = agcAverage(avg, -10);
+    assert.ok(avg > -10.5, "follows a feed that got louder: " + avg);
+});
+
+// new videos start at the gain a typical video settles at
+test("agcStartDb: the average's gain, never a boost; Config startDb until learnt", () => {
+    const c = { ...cfg, targetDb: -28, startDb: -9 };
+    assert.strictEqual(agcStartDb(null, c), -9, "nothing learnt yet");
+    assert.strictEqual(agcStartDb(-16, c), -12, "target -28, typical -16");
+    assert.strictEqual(agcStartDb(-35, c), 0, "a quiet feed starts unboosted");
+    assert.strictEqual(agcStartDb(0, c), -18, "within maxCutDb");
 });

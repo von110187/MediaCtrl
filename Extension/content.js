@@ -7,7 +7,7 @@
     if (window.__mediaCtrlInjected) return;
     window.__mediaCtrlInjected = true;
 
-    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStart, agcVideoKey, agcIsNewVideo, agcSwitch } = globalThis.pageLogic;
+    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch } = globalThis.pageLogic;
 
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
@@ -100,65 +100,61 @@
     // loud it sounds rather than its raw energy) and a gain moves it toward
     // leveler.targetDb — up for quiet videos, down for loud ones, within
     // maxBoostDb/maxCutDb — and a limiter after it catches peaks. Silence
-    // holds the gain.
+    // holds the gain. Only on leveler.sites (Douyin); elsewhere video plays
+    // untouched.
     // Each video is recognised (pageLogic.agcVideoKey) and its settled level
     // remembered for the page (agcSwitch), so:
     //   - the same video looping or replaying keeps its level;
-    //   - a video scrolled back to starts straight at its known level;
-    //   - an unknown one starts a little under where the louder recent
-    //     videos settled (pageLogic.agcStart), so it follows the site's own
-    //     volume slider; the page's first video starts at leveler.startDb.
-    //     It settles within about 1.5 s.
+    //   - a video scrolled back to starts straight at its known level, never
+    //     above where an unknown one starts;
+    //   - an unknown one starts at the gain a typical video settles at: the
+    //     running average of how loud the site's videos are (agcAverage,
+    //     agcStartDb), kept in chrome.storage.local "levelAvg" so it's known
+    //     before the first video of a session plays. Each video counts once,
+    //     after AGC_AVERAGE_AFTER_MS of sound; moving the site's volume
+    //     slider forgets it (leveler.startDb until it's learnt again). Most
+    //     videos then barely move; an unusual one is cut at once or comes up
+    //     after 0.7 s of sound, and settles within about 1.5 s.
     // Feeds like Douyin reuse a few players as you scroll, so this is checked
     // whenever a player loads or starts a video, and for the active player on
     // every tick. Only that player's own gain changes, so a background player
     // (Douyin preloading the next item) never disturbs the one being watched.
-    // A preloaded video gets its start gain again when it starts playing, as
-    // the videos heard since it loaded say more about how loud it'll be.
     // Only for sources Web Audio can hear (pageLogic.audioProcessable) —
     // anything else would play silent — and only once the AudioContext is
     // running, or the routed video would be silent until a click. The state's
-    // "leveled" flag says whether this page's video is levelled (F6 shows it).
+    // "leveled" flag says whether this page's video is levelled, and
+    // "levelAvgDb" / "levelStartDb" what it has learnt (F6 shows them).
 
     const AGC_TICK_MS = 100;
     const AGC_DEFAULT_START_DB = -9;
+    const AGC_AVERAGE_AFTER_MS = 3000;  // a video counts towards the average once it's been heard this long
+    let levelAvg = null;           // the site's running average loudness in dB (storage "levelAvg")
     let audioCtx = null;
     let agcTimer = null;
-    const AGC_RECENT = 5;          // settled videos a new video's start gain is taken from
     let activeVideo = null;        // from the last buildState() or "playing", so the
                                    // AGC loop doesn't disturb isActuallyAdvancing's sampling
-    const agcs = new WeakMap();    // video -> { analyser, gain, buf, track, key, src, loads, seenLoads }
+    const agcs = new WeakMap();    // video -> { analyser, gain, buf, track, key, src, loads, seenLoads, counted }
     const agcMemory = new Map();   // video key -> its settled level (agcSwitch)
-    const agcRecent = new Map();   // video key -> its settled level in dB, newest last
     let agcResuming = false;       // an AudioContext resume() is pending
     let agcSiteVolume = null;      // the site's own volume (slider) last seen
 
-    // where an unheard video starts and how far it may rise while settling
-    // (pageLogic.agcStart): { gain (linear), capDb }. The recent levels'
-    // gains are worked out now, for the current target.
-    function agcStartGain() {
-        const gains = [...agcRecent.values()].map((levelDb) => agcGainDb(levelDb, leveler));
-        const start = agcStart(gains, leveler.startDb ?? AGC_DEFAULT_START_DB);
-        return { gain: Math.pow(10, start.startDb / 20), capDb: start.capDb };
+    // where an unheard video starts, and how far it may rise until it has
+    // heard enough (pageLogic.agcUpdate), in dB
+    function agcStart() {
+        return agcStartDb(levelAvg, { ...leveler, startDb: leveler.startDb ?? AGC_DEFAULT_START_DB });
     }
 
-    // a video that has settled (past its no-boost start) tells the next
-    // unheard one where to start
-    function agcRecordSettled(agc) {
-        if (!agc || agc.key === null || agc.track.heardMs < 1500) return;
-        agcRecent.delete(agc.key);
-        agcRecent.set(agc.key, agc.track.levelDb);
-        if (agcRecent.size > AGC_RECENT) agcRecent.delete(agcRecent.keys().next().value);
-    }
-
-    function agcSetActive(video) {
-        if (video === activeVideo) return;
-        if (activeVideo) agcRecordSettled(agcs.get(activeVideo));
-        activeVideo = video;
+    // a video heard long enough counts once towards the site's average
+    function agcCount(agc) {
+        if (agc.counted || agc.track.heardMs < AGC_AVERAGE_AFTER_MS) return;
+        agc.counted = true;
+        levelAvg = Math.round(agcAverage(levelAvg, agc.track.levelDb) * 100) / 100;
+        chrome.storage.local.set({ levelAvg });
     }
 
     function levelVideo(video) {
         if (!leveler.enabled || !video || agcs.has(video)) return;
+        if (!(leveler.sites ?? []).includes(currentSite()?.key)) return;
         if (!audioProcessable(video.currentSrc, location.origin, video.crossOrigin)) return;
         try {
             if (!audioCtx) audioCtx = new AudioContext();
@@ -178,7 +174,7 @@
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 4096;
             const gain = audioCtx.createGain();
-            gain.gain.value = agcStartGain().gain;
+            gain.gain.value = Math.pow(10, agcStart() / 20);
             const limiter = audioCtx.createDynamicsCompressor();
             limiter.threshold.value = leveler.limiterDb;
             limiter.knee.value = 0;
@@ -201,19 +197,21 @@
             source.connect(highPass).connect(presence).connect(analyser);  // measured before the gain, so no feedback
             source.connect(gain).connect(limiter).connect(audioCtx.destination);
             const agc = { analyser, gain, buf: new Float32Array(analyser.fftSize), track: agcNew(),
-                          key: null, src: null, loads: 0, seenLoads: 0 };
+                          key: null, src: null, loads: 0, seenLoads: 0, counted: false };
             agcs.set(video, agc);
             video.addEventListener("loadstart", () => agc.loads++);
-            // the site's volume slider moved: what the recent videos settled
-            // at no longer says where the next one should start — forget it,
-            // so the next new video starts at the safe first level. Only the
-            // watched video counts (the slider acts on it; Douyin also sets
-            // up background players' volume), and mute / unmute isn't a change.
+            // the site's volume slider moved: the average and the levels
+            // remembered for scrolled-back videos were heard at the old
+            // volume — forget them, so new videos start at leveler.startDb
+            // until the average is learnt again. Only the watched video
+            // counts (the slider acts on it; Douyin also sets up background
+            // players' volume), and mute / unmute isn't a change.
             video.addEventListener("volumechange", () => {
                 if (video !== activeVideo) return;
                 if (agcSiteVolume !== null && Math.abs(video.volume - agcSiteVolume) > 0.01) {
-                    agcRecent.clear();
                     agcMemory.clear();
+                    levelAvg = null;
+                    chrome.storage.local.remove("levelAvg");
                 }
                 agcSiteVolume = video.volume;
             });
@@ -222,9 +220,8 @@
             // a video starting is the one being watched: measure it from its
             // first moment, not from the next report (up to a few hundred ms later)
             video.addEventListener("playing", () => {
-                agcSetActive(video);
+                activeVideo = video;
                 agcCheckVideo(video);
-                if (agc.track.heardMs === 0) { const s = agcStartGain(); agcSetGain(agc, s.gain, s.capDb); }
             });
             agcCheckVideo(video);
             if (!agcTimer) agcTimer = setInterval(agcTick, AGC_TICK_MS);
@@ -260,20 +257,20 @@
             agc.key = agc.key ?? key;
             return;
         }
-        agcRecordSettled(agc);
         const next = agcSwitch(agcMemory, agc.key, agc.track, key);
         agc.track = next.track;
         agc.key = key;
         agc.src = src;
         agc.seenLoads = agc.loads;
+        agc.counted = next.known;  // a scrolled-back video was counted the first time
         // a known video starts at its level, but never louder than an unknown
         // one would: its duration key may belong to another clip, and its
         // boost comes back once it's re-checked (pageLogic.agcSwitch)
-        const start = agcStartGain();
+        const startDb = agcStart();
         if (next.known)
-            agcSetGain(agc, Math.min(Math.pow(10, agcGainDb(next.track.levelDb, leveler) / 20), start.gain));
+            agcSetGain(agc, Math.pow(10, Math.min(agcGainDb(next.track.levelDb, leveler), startDb) / 20));
         else
-            agcSetGain(agc, start.gain, start.capDb);
+            agcSetGain(agc, Math.pow(10, startDb / 20), startDb);
     }
 
     function agcTick() {
@@ -285,6 +282,7 @@
         const db = rmsDb(agc.buf);
         if (!(db > leveler.silenceDb)) return;  // silence or a gap: hold the gain
         const gainDb = agcUpdate(agc.track, db, leveler, AGC_TICK_MS);
+        agcCount(agc);
         // glide quickly while a new video settles, gently after that
         const glideS = agc.track.heardMs < 1000 ? 0.08 : 0.3;
         agc.gain.gain.setTargetAtTime(Math.pow(10, gainDb / 20), audioCtx.currentTime, glideS);
@@ -303,7 +301,7 @@
         const urlResult = site ? urlLooksPlayable(site.key, location.pathname) : false;
         const playable = urlResult !== null ? urlResult : !!video;
         const hasFsTarget = !!findFsButton(site, video) || !!fullscreenTarget(site, video);
-        agcSetActive(video);
+        activeVideo = video;
         levelVideo(video);
 
         return {
@@ -321,6 +319,8 @@
             editableFocused: !document.hasFocus() || isEditable(innermostActive(document)),
             pageId,
             leveled: !!video && agcs.has(video),
+            levelAvgDb: levelAvg === null ? null : Math.round(levelAvg),
+            levelStartDb: Math.round(agcStart()),
         };
     }
 
@@ -497,15 +497,17 @@
 
     // ── Triggers ────────────────────────────────────────────────────────────
 
-    chrome.storage.local.get(["sites", "leveler"], (s) => {
+    chrome.storage.local.get(["sites", "leveler", "levelAvg"], (s) => {
         sites = s.sites || {};
         leveler = s.leveler || {};
+        levelAvg = s.levelAvg ?? null;
         report(true);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "local") return;
         if (changes.sites) sites = changes.sites.newValue || {};
         if (changes.leveler) leveler = changes.leveler.newValue || {};
+        if (changes.levelAvg) levelAvg = changes.levelAvg.newValue ?? null;  // another tab learnt or forgot it
         if (changes.sites || changes.leveler) report(true);
     });
 

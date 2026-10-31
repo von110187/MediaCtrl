@@ -264,8 +264,12 @@ LastConfig(env) {
     return ""
 }
 
+; the leveler runs on Douyin only (PAGE_LEVELER.sites)
+ReportDouyin() => Report({url: "https://www.douyin.com/?recommend=1", site: "douyin"})
+
 Test_glue_level_keys_move_the_target() {
     env := GlueSetup()
+    ReportDouyin()
     _HK_LevelUp()
     Assert(State.levelDb == -20 + CONFIG.LEVEL_STEP_DB)
     Assert(LastConfig(env).leveler.targetDb == State.levelDb, "sent to the extension")
@@ -278,11 +282,23 @@ Test_glue_level_keys_move_the_target() {
 
 Test_glue_level_keys_stop_at_the_limits() {
     env := GlueSetup()
+    ReportDouyin()
     State.levelDb := CONFIG.LEVEL_MAX_DB
     _HK_LevelUp()
     Assert(State.levelDb == CONFIG.LEVEL_MAX_DB)
     Assert(LastConfig(env) == "", "nothing to send")
     Assert(InStr(env.notice, "max"))
+}
+
+; not a leveler site: - / = are the site's own keys, the level stays
+Test_glue_level_keys_pass_through_elsewhere() {
+    env := GlueSetup()
+    Report()  ; YouTube
+    _HK_LevelUp(), _HK_LevelDown()
+    Assert(State.levelDb == -20, "level untouched")
+    Assert(LastConfig(env) == "", "nothing to send")
+    Assert(env.notice == "", "no notice")
+    Assert(env.Pressed("=") == 1 && env.Pressed("-") == 1, "sent to the page")
 }
 
 Test_glue_config_on_connect_uses_current_level() {

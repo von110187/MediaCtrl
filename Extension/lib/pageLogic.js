@@ -88,10 +88,11 @@
     }
 
     const AGC_STEADY_ATTACK_MS = 1500;  // once settled, louder sound is followed over ~1.5 s (the limiter catches peaks)
-    const AGC_NO_BOOST_MS = 1500;       // a new video settles, and may only be turned down, this long
+    const AGC_SETTLE_MS = 1500;         // a new video's level is integrated this long
+    const AGC_NO_BOOST_MS = 700;        // ...and it may only be turned down until it has heard this much sound
 
     // one measured block (dB, already known not to be silence) → the gain in
-    // dB to apply now. While a new video settles (AGC_NO_BOOST_MS) its level
+    // dB to apply now. While a new video settles (AGC_SETTLE_MS) its level
     // is the power average of every block heard so far, as a LUFS meter
     // integrates: it settles within a few blocks, a gap or a blip barely
     // moves it, and loud blocks weigh most, so it errs towards turning down.
@@ -100,15 +101,17 @@
     // AGC_STEADY_ATTACK_MS, so a drum hit or a shout doesn't duck the whole
     // video and pump back up after; quieter sound over cfg.smoothingS, so a
     // quiet stretch can't leave a big boost in place when it gets loud. And
-    // while a new video settles the gain never rises above where it started
-    // (agc.startDb, set by the caller from agcStart's capDb; never above
-    // 0 dB): many clips open
-    // with near-silence or a fade-in, and opening the gain for it would play
-    // the real sound right after it too loud. A quiet video comes up once
-    // it has settled.
+    // until a new video has heard AGC_NO_BOOST_MS of sound (blocks; silence
+    // isn't measured, so a silent intro doesn't count) the gain never rises
+    // above where it started (agc.startDb, set by the caller: agcStartDb;
+    // never above 0 dB): many clips open with a fade-in, and opening the
+    // gain for it would play the real sound right after it too loud. A quiet
+    // video comes up after that. A remembered level being re-checked isn't
+    // boosted until its check ends (agcSwitch).
     function agcUpdate(agc, db, cfg, dtMs) {
         agc.heardMs += dtMs;
-        if (agc.heardMs < AGC_NO_BOOST_MS || agc.levelDb === null) {
+        const settling = agc.heardMs < AGC_SETTLE_MS;
+        if (settling || agc.levelDb === null) {
             if (!agc.blocks && agc.levelDb !== null) {
                 agc.sumPow = Math.pow(10, agc.levelDb / 10);
                 agc.blocks = 1;
@@ -121,27 +124,27 @@
             agc.levelDb += Math.min(1, dtMs / tauMs) * (db - agc.levelDb);
         }
         const gainDb = agcGainDb(agc.levelDb, cfg);
-        return agc.heardMs < AGC_NO_BOOST_MS ? Math.min(gainDb, 0, agc.startDb ?? 0) : gainDb;
+        const noBoost = settling && agc.blocks * dtMs < AGC_NO_BOOST_MS;
+        return noBoost ? Math.min(gainDb, 0, agc.startDb ?? 0) : gainDb;
     }
 
-    const AGC_START_MARGIN_DB = 3;
+    const AGC_AVERAGE_OF = 20;   // the Douyin average follows about this many videos
 
-    // Where a new video starts, before its first measurement, in dB:
-    //   startDb — a margin under what the louder of the last few videos
-    //     settled at (the lower quartile of their gains, so one odd video
-    //     doesn't decide it). That follows the site's own volume slider:
-    //     slider high, the sound arrives loud and videos settle at a big cut,
-    //     so the next one starts quiet; slider low, they settle at about none,
-    //     so the next one starts near full level instead of at a fixed cut
-    //     and doesn't jump up when it has settled;
-    //   capDb — how far it may rise while settling (agcUpdate): up to that
-    //     recent level, never a real boost, never above 0 dB.
-    // With nothing heard yet on the page, both are firstDb (Config startDb).
-    function agcStart(recentGainsDb, firstDb) {
-        if (!recentGainsDb.length) return { startDb: firstDb, capDb: firstDb };
-        const sorted = [...recentGainsDb].sort((a, b) => a - b);
-        const capDb = Math.min(0, sorted[sorted.length >> 2]);
-        return { startDb: Math.round((capDb - AGC_START_MARGIN_DB) * 10) / 10, capDb };
+    // The page leveler's running average of how loud the site's videos are
+    // (dB, measured as agcUpdate does), one settled video at a time. null:
+    // nothing heard yet.
+    function agcAverage(avgDb, levelDb) {
+        if (avgDb === null || avgDb === undefined) return levelDb;
+        return avgDb + (levelDb - avgDb) / AGC_AVERAGE_OF;
+    }
+
+    // Where every new video starts, in dB: the gain a typical video (the
+    // average) settles at, so most start where they end up. Never a boost —
+    // a quiet one comes up once heard (agcUpdate). No average yet:
+    // cfg.startDb.
+    function agcStartDb(avgDb, cfg) {
+        if (avgDb === null || avgDb === undefined) return cfg.startDb;
+        return Math.round(Math.min(0, agcGainDb(avgDb, cfg)) * 10) / 10;
     }
 
     // Which video is this, for the page leveler's memory? A plain URL is the
@@ -181,10 +184,10 @@
         }
         const saved = newKey !== null ? cache.get(newKey) : undefined;
         if (!saved) return { track: agcNew(), known: false };
-        return { track: { ...saved, heardMs: Math.min(saved.heardMs, AGC_NO_BOOST_MS - AGC_RECHECK_MS) }, known: true };
+        return { track: { ...saved, heardMs: Math.min(saved.heardMs, AGC_SETTLE_MS - AGC_RECHECK_MS) }, known: true };
     }
 
-    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcStart, agcVideoKey, agcIsNewVideo, agcSwitch };
+    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch };
     globalThis.pageLogic = api;
     if (typeof module !== "undefined") module.exports = api;
 })();

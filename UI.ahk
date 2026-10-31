@@ -108,6 +108,10 @@ ShowTooltip() {
 
     ; ── Sound ────────────────────────────────────────────────
     t .= "Volume:    " . (pageLeveled ? "levelled" : "not levelled on this page") . "`n"
+    if pageLeveled && p.HasOwnProp("levelStartDb")
+        t .= "           " . (p.HasOwnProp("levelAvgDb") && p.levelAvgDb != ""
+            ? "avg " . p.levelAvgDb . " dB → start " . p.levelStartDb . " dB"
+            : "learning the average · start " . p.levelStartDb . " dB") . "`n"
     t .= "Speaker:   " . (State.activeSpeaker ? State.activeSpeaker : "—") . "  ·  bass " . (State.bassOn ? "ON" : "off") . "`n"
     t .= "Spotify:   " . _SpotifyLine() . "`n"
 
