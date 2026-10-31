@@ -7,7 +7,7 @@
     if (window.__mediaCtrlInjected) return;
     window.__mediaCtrlInjected = true;
 
-    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch } = globalThis.pageLogic;
+    const { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch, AGC_MEASURE_MS } = globalThis.pageLogic;
 
     const SEEK_GRACE_MS = 1500;   // ignore post-seek rebuffer "paused" blips
     const ARM_WINDOW_MS = 1000;   // armed nudge expires after this
@@ -95,26 +95,28 @@
     }
 
     // ── Page leveler (AGC) ──────────────────────────────────────────────────
-    // Brings every video to the same loudness: the video's sound is measured
-    // (RMS over a few seconds, K-weighted like a LUFS meter so it follows how
-    // loud it sounds rather than its raw energy) and a gain moves it toward
-    // leveler.targetDb — up for quiet videos, down for loud ones, within
-    // maxBoostDb/maxCutDb — and a limiter after it catches peaks. Silence
-    // holds the gain. Only on leveler.sites (Douyin); elsewhere video plays
-    // untouched.
-    // Each video is recognised (pageLogic.agcVideoKey) and its settled level
+    // Brings every video to the same loudness with one gain per video: its
+    // first 3 s of sound are measured (K-weighted like a LUFS meter, so it
+    // follows how loud it sounds rather than its raw energy), the gain moves
+    // it toward leveler.targetDb — up for quiet videos, down for loud ones,
+    // within maxBoostDb/maxCutDb — and is then locked for the rest of the
+    // video, so it never drifts loud and quiet while you watch; only a
+    // lasting much louder part turns it down (pageLogic.agcUpdate). A
+    // limiter after it catches peaks. Silence holds the gain. Only on
+    // leveler.sites (Douyin); elsewhere video plays untouched.
+    // Each video is recognised (pageLogic.agcVideoKey) and its locked level
     // remembered for the page (agcSwitch), so:
     //   - the same video looping or replaying keeps its level;
     //   - a video scrolled back to starts straight at its known level, never
     //     above where an unknown one starts;
-    //   - an unknown one starts at the gain a typical video settles at: the
+    //   - an unknown one starts at the gain a typical video locks at: the
     //     running average of how loud the site's videos are (agcAverage,
     //     agcStartDb), kept in chrome.storage.local "levelAvg" so it's known
     //     before the first video of a session plays. Each video counts once,
-    //     after AGC_AVERAGE_AFTER_MS of sound; moving the site's volume
+    //     when its gain locks; moving the site's volume
     //     slider forgets it (leveler.startDb until it's learnt again). Most
     //     videos then barely move; an unusual one is cut at once or comes up
-    //     after 0.7 s of sound, and settles within about 1.5 s.
+    //     after 0.7 s of sound, and is locked after 3 s.
     // Feeds like Douyin reuse a few players as you scroll, so this is checked
     // whenever a player loads or starts a video, and for the active player on
     // every tick. Only that player's own gain changes, so a background player
@@ -127,7 +129,6 @@
 
     const AGC_TICK_MS = 100;
     const AGC_DEFAULT_START_DB = -9;
-    const AGC_AVERAGE_AFTER_MS = 3000;  // a video counts towards the average once it's been heard this long
     let levelAvg = null;           // the site's running average loudness in dB (storage "levelAvg")
     let audioCtx = null;
     let agcTimer = null;
@@ -146,7 +147,7 @@
 
     // a video heard long enough counts once towards the site's average
     function agcCount(agc) {
-        if (agc.counted || agc.track.heardMs < AGC_AVERAGE_AFTER_MS) return;
+        if (agc.counted || agc.track.heardMs < AGC_MEASURE_MS) return;
         agc.counted = true;
         levelAvg = Math.round(agcAverage(levelAvg, agc.track.levelDb) * 100) / 100;
         chrome.storage.local.set({ levelAvg });
@@ -230,8 +231,8 @@
         }
     }
 
-    // set a video's gain now, as where it starts; until it has settled it
-    // won't rise above capDb (default: where it starts) — pageLogic.agcUpdate
+    // set a video's gain now, as where it starts; until it has heard enough
+    // to boost it won't rise above capDb (default: where it starts) — pageLogic.agcUpdate
     function agcSetGain(agc, value, capDb = 20 * Math.log10(value)) {
         agc.track.startDb = capDb;
         agc.gain.gain.cancelScheduledValues(audioCtx.currentTime);
@@ -283,8 +284,9 @@
         if (!(db > leveler.silenceDb)) return;  // silence or a gap: hold the gain
         const gainDb = agcUpdate(agc.track, db, leveler, AGC_TICK_MS);
         agcCount(agc);
-        // glide quickly while a new video settles, gently after that
-        const glideS = agc.track.heardMs < 1000 ? 0.08 : 0.3;
+        // glide quickly while a new video is measured; a safety cut after it
+        // is locked goes down gently
+        const glideS = agc.track.heardMs <= AGC_MEASURE_MS ? 0.08 : 0.5;
         agc.gain.gain.setTargetAtTime(Math.pow(10, gainDb / 20), audioCtx.currentTime, glideS);
     }
 

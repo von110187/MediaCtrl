@@ -82,7 +82,7 @@ test("agcGainDb moves toward the target within the limits", () => {
 });
 
 // AGC level tracking: a fresh measurement settles fast; a long-running one is steady
-const cfg = { targetDb: -20, maxBoostDb: 18, maxCutDb: 18, smoothingS: 3 };
+const cfg = { targetDb: -20, maxBoostDb: 18, maxCutDb: 18 };
 const TICK = 100;
 function feed(agc, db, ticks) { for (let i = 0; i < ticks; i++) agcUpdate(agc, db, cfg, TICK); }
 
@@ -176,19 +176,21 @@ test("agcSwitch: scrolling back restores the video's settled level", () => {
 });
 
 // a duration key can match a different clip of the same length: a restored
-// level must re-check itself fast and without boosting, like a new video,
-// for its first moment — a loud clip mistaken for a quiet remembered one
-// mustn't play boosted for seconds
-test("agcSwitch: a restored level re-checks itself fast at first", () => {
+// level is checked again for its first moment, without boosting — a loud
+// clip mistaken for a quiet remembered one mustn't play boosted — while the
+// real video keeps its gain
+test("agcSwitch: a restored level is checked again without a boost", () => {
     const cache = new Map();
-    agcSwitch(cache, "dur:15.30", { levelDb: -32, heardMs: 9000 }, "dur:20.00");  // a quiet clip, +12 dB
+    agcSwitch(cache, "dur:15.30", { levelDb: -32, heardMs: 9000, blocks: 30 }, "dur:20.00");  // a quiet clip, +12 dB
     const back = agcSwitch(cache, "dur:20.00", agcNew(), "dur:15.30");
     assert.ok(back.track.heardMs >= 1000, "still counts as heard: " + back.track.heardMs);
     assert.ok(agcUpdate(back.track, -32, cfg, TICK) <= 0, "no boost in its first moment");
-    feed(back.track, -8, 3);                                                       // it's actually loud
-    assert.ok(back.track.levelDb > -14, "a loud clip is followed fast: " + back.track.levelDb);
-    feed(back.track, -32, 50);
-    assert.ok(agcUpdate(back.track, -32, cfg, TICK) > 0, "boost allowed again once checked");
+    feed(back.track, -32, 4);
+    assert.strictEqual(agcUpdate(back.track, -32, cfg, TICK), 12, "the same video: its own gain, locked");
+    const wrong = agcSwitch(cache, "dur:20.00", agcNew(), "dur:15.30").track;
+    feed(wrong, -8, 5);                                                      // it's actually loud
+    assert.ok(wrong.levelDb > -24, "a loud clip moves it at once: " + wrong.levelDb);
+    assert.ok(agcUpdate(wrong, -8, cfg, TICK) < 4);
 });
 
 test("agcSwitch: a barely-heard video isn't remembered", () => {
@@ -204,10 +206,10 @@ test("agcSwitch: remembers at most 200 videos, dropping the oldest", () => {
     assert.ok(!cache.has("v0") && cache.has("v204"));
 });
 
-// A new video's loud start is followed within a fraction of a second; once
-// settled, a short loud moment (a hit, a shout) barely moves the level — the
-// limiter handles it — while a lasting louder stretch is followed in seconds.
-// A quiet one only slowly, so a quiet stretch can't leave a big boost in place.
+// A new video's loud start is followed within a fraction of a second. After
+// 3 s of sound its gain is locked: quiet and loud stretches within the video
+// play as they are (no pumping); only a lasting, much louder part (6 dB
+// above the measured level for 2 s) turns it down — never back up.
 test("agcUpdate: follows a new video's loud start fast", () => {
     const fresh = agcNew();
     feed(fresh, -30, 3);                 // 0.3 s of a quiet intro
@@ -215,20 +217,40 @@ test("agcUpdate: follows a new video's loud start fast", () => {
     assert.ok(fresh.levelDb > -14, "loud followed fast: " + fresh.levelDb);
 });
 
-test("agcUpdate: once settled, a short loud moment doesn't duck the video", () => {
+test("agcUpdate: the level is measured over 3 s of sound, then locked", () => {
     const agc = agcNew();
-    feed(agc, -30, 50);                  // settled on a quiet video
-    feed(agc, -10, 3);                   // 0.3 s of loud
-    assert.ok(agc.levelDb < -25, "barely moved: " + agc.levelDb);
-    feed(agc, -10, 47);                  // the loud part lasts 5 s
-    assert.ok(agc.levelDb > -12, "a lasting change is followed: " + agc.levelDb);
+    feed(agc, -20, 15);
+    feed(agc, -30, 15);                  // still measuring: the quieter half counts
+    const locked = agc.levelDb;
+    assert.ok(locked < -22 && locked > -24, "power average of the 3 s: " + locked);
+    feed(agc, -35, 100);                 // a long quiet stretch: no boost creeps in
+    feed(agc, -22, 100);                 // a bit louder (under 6 dB): left alone
+    assert.strictEqual(agc.levelDb, locked);
 });
 
-test("agcUpdate: follows a quieter sound slowly", () => {
-    const down = agcNew();
-    feed(down, -10, 50);                 // settled on a loud video
-    feed(down, -30, 3);                  // 0.3 s of quiet
-    assert.ok(down.levelDb > -14, "quiet followed slowly: " + down.levelDb);
+test("agcUpdate: a short loud moment doesn't duck a locked video", () => {
+    const agc = agcNew();
+    feed(agc, -30, 30);                  // locked on a quiet video
+    for (let i = 0; i < 10; i++) { feed(agc, -10, 15); feed(agc, -30, 15); }  // 1.5 s shouts, with pauses
+    assert.ok(Math.abs(agc.levelDb - -30) < 0.01, "untouched: " + agc.levelDb);
+});
+
+test("agcUpdate: a lasting much louder part turns a locked video down, never up", () => {
+    const agc = agcNew();
+    feed(agc, -30, 30);                  // quiet talk, locked
+    feed(agc, -10, 19);                  // loud music: 1.9 s
+    assert.ok(Math.abs(agc.levelDb - -30) < 0.01, "not yet: " + agc.levelDb);
+    const g = agcUpdate(agc, -10, cfg, TICK);  // 2 s: the safety cut
+    assert.ok(Math.abs(agc.levelDb - -10) < 0.01 && g < -9, "turned down: " + agc.levelDb);
+    feed(agc, -30, 100);                 // quiet again
+    assert.ok(Math.abs(agc.levelDb - -10) < 0.01, "not back up: " + agc.levelDb);
+});
+
+test("agcUpdate: a beat's quieter blocks don't hide a loud part", () => {
+    const agc = agcNew();
+    feed(agc, -30, 30);
+    for (let i = 0; i < 15; i++) { feed(agc, -12, 3); feed(agc, -30, 1); }  // loud, with gaps
+    assert.ok(agc.levelDb > -14, "turned down: " + agc.levelDb);
 });
 
 // While a new video settles it may only be turned down, never up: a quiet

@@ -79,59 +79,65 @@
         return Math.max(-cfg.maxCutDb, Math.min(cfg.maxBoostDb, cfg.targetDb - levelDb));
     }
 
-    // Page leveler level tracking for one video. A fresh tracker settles fast
-    // (the power average of all it has heard, over its first 1.5 s); a
-    // long-running one is steady, so quiet moments within a video aren't
-    // pumped up. Start a fresh one for every new video.
+    // Page leveler level tracking for one video: measured over its first
+    // AGC_MEASURE_MS of sound, then held (agcUpdate). Start a fresh one for
+    // every new video.
     function agcNew() {
-        return { levelDb: null, heardMs: 0, sumPow: 0, blocks: 0 };
+        return { levelDb: null, heardMs: 0, sumPow: 0, blocks: 0, loudMs: 0, loudPow: 0, loudBlocks: 0 };
     }
 
-    const AGC_STEADY_ATTACK_MS = 1500;  // once settled, louder sound is followed over ~1.5 s (the limiter catches peaks)
-    const AGC_SETTLE_MS = 1500;         // a new video's level is integrated this long
-    const AGC_NO_BOOST_MS = 700;        // ...and it may only be turned down until it has heard this much sound
+    const AGC_MEASURE_MS = 3000;   // a new video's level is measured over this much sound, then its gain is locked
+    const AGC_NO_BOOST_MS = 700;   // ...and it may only be turned down until it has heard this much
+    const AGC_SAFETY_DB = 6;       // locked: sound this much louder than measured...
+    const AGC_SAFETY_MS = 2000;    // ...for this long turns the video down to it
 
     // one measured block (dB, already known not to be silence) → the gain in
-    // dB to apply now. While a new video settles (AGC_SETTLE_MS) its level
-    // is the power average of every block heard so far, as a LUFS meter
-    // integrates: it settles within a few blocks, a gap or a blip barely
-    // moves it, and loud blocks weigh most, so it errs towards turning down.
-    // A remembered level being re-checked counts as one block of it. After
-    // that: faster down than up, as broadcast levelers do — louder sound over
-    // AGC_STEADY_ATTACK_MS, so a drum hit or a shout doesn't duck the whole
-    // video and pump back up after; quieter sound over cfg.smoothingS, so a
-    // quiet stretch can't leave a big boost in place when it gets loud. And
-    // until a new video has heard AGC_NO_BOOST_MS of sound (blocks; silence
-    // isn't measured, so a silent intro doesn't count) the gain never rises
-    // above where it started (agc.startDb, set by the caller: agcStartDb;
-    // never above 0 dB): many clips open with a fade-in, and opening the
-    // gain for it would play the real sound right after it too loud. A quiet
-    // video comes up after that. A remembered level being re-checked isn't
-    // boosted until its check ends (agcSwitch).
+    // dB to apply now. One gain per video, so it never drifts loud and quiet
+    // while it plays:
+    //   - measuring (the first AGC_MEASURE_MS of sound; silence isn't
+    //     measured): the level is the power average of every block so far,
+    //     as a LUFS meter integrates — a gap or a blip barely moves it, and
+    //     loud blocks weigh most, so it errs towards turning down. Until
+    //     AGC_NO_BOOST_MS of it the gain never rises above where it started
+    //     (agc.startDb, set by the caller: agcStartDb; never above 0 dB):
+    //     many clips open with a fade-in, and opening the gain for it would
+    //     play the real sound right after it too loud. A remembered level
+    //     being re-checked (agc.checking, agcSwitch) isn't boosted at all;
+    //   - then the level is locked. Only a safety cut moves it: sound more
+    //     than AGC_SAFETY_DB louder for AGC_SAFETY_MS (quiet talk, then loud
+    //     music — the limiter only catches peaks) raises it to that loud
+    //     part's level, so the video is turned down, never back up. Quieter
+    //     blocks wind the timer back down rather than restarting it, so
+    //     music's beats don't hide a loud part.
     function agcUpdate(agc, db, cfg, dtMs) {
         agc.heardMs += dtMs;
-        const settling = agc.heardMs < AGC_SETTLE_MS;
-        if (settling || agc.levelDb === null) {
-            if (!agc.blocks && agc.levelDb !== null) {
-                agc.sumPow = Math.pow(10, agc.levelDb / 10);
-                agc.blocks = 1;
-            }
-            agc.sumPow += Math.pow(10, db / 10);
+        const pow = Math.pow(10, db / 10);
+        const measuring = agc.heardMs <= AGC_MEASURE_MS || agc.levelDb === null;
+        if (measuring) {
+            agc.sumPow += pow;
             agc.blocks++;
             agc.levelDb = 10 * Math.log10(agc.sumPow / agc.blocks);
-        } else {
-            const tauMs = db > agc.levelDb ? AGC_STEADY_ATTACK_MS : cfg.smoothingS * 1000;
-            agc.levelDb += Math.min(1, dtMs / tauMs) * (db - agc.levelDb);
+        } else if (db > agc.levelDb + AGC_SAFETY_DB) {
+            agc.loudMs += dtMs;
+            agc.loudPow += pow;
+            agc.loudBlocks++;
+            if (agc.loudMs >= AGC_SAFETY_MS) {
+                agc.levelDb = 10 * Math.log10(agc.loudPow / agc.loudBlocks);
+                agc.loudMs = agc.loudPow = agc.loudBlocks = 0;
+            }
+        } else if (agc.loudMs > 0) {
+            agc.loudMs = Math.max(0, agc.loudMs - dtMs);
+            if (!agc.loudMs) agc.loudPow = agc.loudBlocks = 0;
         }
         const gainDb = agcGainDb(agc.levelDb, cfg);
-        const noBoost = settling && agc.blocks * dtMs < AGC_NO_BOOST_MS;
+        const noBoost = measuring && (agc.checking || agc.blocks * dtMs < AGC_NO_BOOST_MS);
         return noBoost ? Math.min(gainDb, 0, agc.startDb ?? 0) : gainDb;
     }
 
     const AGC_AVERAGE_OF = 20;   // the Douyin average follows about this many videos
 
     // The page leveler's running average of how loud the site's videos are
-    // (dB, measured as agcUpdate does), one settled video at a time. null:
+    // (dB, measured as agcUpdate does), one locked video at a time. null:
     // nothing heard yet.
     function agcAverage(avgDb, levelDb) {
         if (avgDb === null || avgDb === undefined) return levelDb;
@@ -171,23 +177,26 @@
 
     // The player moved from video oldKey (its tracker oldTrack) to newKey.
     // Remembers the old video's level if it had settled, and returns the
-    // tracker to use: a copy of the remembered one (known: true) or a fresh
-    // one (known: false). A remembered one restarts AGC_RECHECK_MS before
-    // the end of the no-boost start: a duration key can match a different
-    // clip of the same length, so for that moment a louder sound is followed
-    // fast and nothing is boosted, as for a new video.
+    // tracker to use: the remembered one (known: true) or a fresh one
+    // (known: false). A remembered one keeps its level and how much it was
+    // measured over, and is checked again for AGC_RECHECK_MS without a
+    // boost: a duration key can match a different clip of the same length,
+    // and a louder one moves the level, weighted against the blocks already
+    // measured, so a matching video keeps its gain.
     function agcSwitch(cache, oldKey, oldTrack, newKey) {
         if (oldKey !== null && oldTrack && oldTrack.heardMs >= AGC_SETTLED_MS) {
             cache.delete(oldKey);  // re-insert as the newest
-            cache.set(oldKey, { levelDb: oldTrack.levelDb, heardMs: oldTrack.heardMs });
+            cache.set(oldKey, { levelDb: oldTrack.levelDb, heardMs: oldTrack.heardMs, blocks: oldTrack.blocks });
             if (cache.size > AGC_MEMORY) cache.delete(cache.keys().next().value);
         }
         const saved = newKey !== null ? cache.get(newKey) : undefined;
         if (!saved) return { track: agcNew(), known: false };
-        return { track: { ...saved, heardMs: Math.min(saved.heardMs, AGC_SETTLE_MS - AGC_RECHECK_MS) }, known: true };
+        const blocks = Math.max(1, saved.blocks || 0);
+        return { track: { ...agcNew(), levelDb: saved.levelDb, blocks, sumPow: Math.pow(10, saved.levelDb / 10) * blocks,
+                          heardMs: Math.min(saved.heardMs, AGC_MEASURE_MS - AGC_RECHECK_MS), checking: true }, known: true };
     }
 
-    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch };
+    const api = { matchSite, urlLooksPlayable, coversVideo, isEditable, innermostActive, audioProcessable, rmsDb, agcGainDb, agcNew, agcUpdate, agcAverage, agcStartDb, agcVideoKey, agcIsNewVideo, agcSwitch, AGC_MEASURE_MS };
     globalThis.pageLogic = api;
     if (typeof module !== "undefined") module.exports = api;
 })();

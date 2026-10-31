@@ -43,17 +43,16 @@ global CONFIG := {
     CLICK_EXIT_WAIT_MS: 500,    ; b / video click: exit after the site's pause, at most this long
 
     ; ── Page leveler (AGC) ───────────────────────────────────────────────────
-    ; Runs in the page (Extension/content.js): each video's loudness is
-    ; measured and its gain moved toward targetDb, so every video plays at
-    ; about the same level — quiet ones up, loud ones down — with a limiter
-    ; catching peaks. Sent to the extension with the sites. It only attaches
+    ; Runs in the page (Extension/content.js): each video's first 3 s of
+    ; sound are measured and its gain moved toward targetDb, then locked for
+    ; the rest of the video, so every video plays at about the same level —
+    ; quiet ones up, loud ones down — without drifting while you watch. A
+    ; lasting much louder part still turns it down, and a limiter catches
+    ; peaks. Sent to the extension with the sites. It only attaches
     ; to sources Web Audio can hear; others play as they are.
     ;   sites      — the SITES it runs on; elsewhere video plays untouched
     ;   targetDb   — loudness every video is brought to (RMS dBFS; higher = louder)
     ;   maxBoostDb / maxCutDb — how far a video may be turned up / down
-    ;   smoothingS — how slowly a video is turned back up when it gets
-    ;                quieter, in seconds (higher = slower, steadier); louder
-    ;                sound is followed over a fixed ~1.5 s
     ;   silenceDb  — quieter than this is a gap: the gain is held
     ;   limiterDb  — peaks above this are squashed
     ;   startDb    — where new videos start (-9 = about a third) until the
@@ -67,7 +66,6 @@ global CONFIG := {
         targetDb:   -20,
         maxBoostDb: 18,
         maxCutDb:   18,
-        smoothingS: 3,
         silenceDb:  -50,
         limiterDb:  -3,
         startDb:    -9,
