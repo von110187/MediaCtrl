@@ -15,7 +15,7 @@
         },
         {
             "matches": ["*://*.douyin.com/*"],
-            "js": ["douyinGuard.js"],
+            "js": ["douyinGuard.js", "douyinPlayer.js"],
             "run_at": "document_start",
             "world": "MAIN",
             "all_frames": false

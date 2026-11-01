@@ -54,8 +54,10 @@
     // Whether a <video>'s audio can go through Web Audio without being muted:
     // cross-origin media without CORS plays silent once routed there, and an
     // element can never be un-routed. MSE players (YouTube, Bilibili) use
-    // blob: URLs, which are fine.
-    function audioProcessable(src, pageOrigin, crossOriginAttr) {
+    // blob: URLs, which are fine; so is a stream attached as srcObject
+    // (Douyin, on Chrome versions with MSE in a worker), which has no URL.
+    function audioProcessable(src, pageOrigin, crossOriginAttr, hasSrcObject = false) {
+        if (hasSrcObject) return true;
         if (!src) return false;
         if (src.startsWith("blob:")) return true;
         if (crossOriginAttr) return true;  // the element would fail to load at all without CORS

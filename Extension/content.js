@@ -156,7 +156,7 @@
     function levelVideo(video) {
         if (!leveler.enabled || !video || agcs.has(video)) return;
         if (!(leveler.sites ?? []).includes(currentSite()?.key)) return;
-        if (!audioProcessable(video.currentSrc, location.origin, video.crossOrigin)) return;
+        if (!audioProcessable(video.currentSrc, location.origin, video.crossOrigin, !!video.srcObject)) return;
         try {
             if (!audioCtx) audioCtx = new AudioContext();
             if (audioCtx.state !== "running") {
@@ -452,10 +452,31 @@
         holdSpeed = null;
     }
 
+    // A <video> fed a live stream (srcObject — Douyin's newer player decodes
+    // in the page) ignores currentTime and playbackRate; the site's own
+    // player has to do it. Its player object isn't visible from this
+    // isolated world, so douyinPlayer.js (page world) handles a
+    // "mediactrl:control" event on the video — cmd: {to} / {by} seconds,
+    // {rate}, or {get: "rate"} — and cancels it when the player did the job.
+    function playerControl(video, cmd) {
+        if (!video.srcObject) return false;
+        const e = new CustomEvent("mediactrl:control", { detail: JSON.stringify(cmd), cancelable: true });
+        return !video.dispatchEvent(e);
+    }
+
+    function getRate(video) {
+        if (playerControl(video, { get: "rate" })) {
+            const rate = parseFloat(video.getAttribute("data-mediactrl-rate"));
+            if (rate > 0) return rate;
+        }
+        return video.playbackRate;
+    }
+
     function setRate(video, rate) {
-        video.playbackRate = rate;
+        const apply = () => { if (!playerControl(video, { rate })) video.playbackRate = rate; };
+        apply();
         // some players reset playbackRate asynchronously
-        setTimeout(() => { video.playbackRate = rate; }, 100);
+        setTimeout(apply, 100);
     }
 
     chrome.runtime.onMessage.addListener((msg) => {
@@ -468,7 +489,9 @@
         } else if (msg.type === "exitFullscreen") {
             if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
         } else if (msg.type === "seek" && video) {
-            if (typeof msg.to === "number") {
+            if (playerControl(video, { to: msg.to, by: msg.by })) {
+                // the site's player seeked
+            } else if (typeof msg.to === "number") {
                 video.currentTime = msg.to;
             } else if (typeof msg.by === "number") {
                 const max = isFinite(video.duration) ? video.duration : Infinity;
@@ -487,7 +510,7 @@
                 clearTimeout(holdSpeed.timer);  // keep-alive
                 holdSpeed.timer = setTimeout(endHoldSpeed, HOLD_SPEED_EXPIRE_MS);
             } else if (msg.on && video && typeof msg.rate === "number") {
-                holdSpeed = { video, rate: video.playbackRate, timer: setTimeout(endHoldSpeed, HOLD_SPEED_EXPIRE_MS) };
+                holdSpeed = { video, rate: getRate(video), timer: setTimeout(endHoldSpeed, HOLD_SPEED_EXPIRE_MS) };
                 setRate(video, msg.rate);
             } else if (!msg.on) {
                 endHoldSpeed();

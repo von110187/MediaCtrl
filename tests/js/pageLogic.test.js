@@ -62,6 +62,7 @@ test("audioProcessable allows only sources Web Audio can hear", () => {
     assert.strictEqual(audioProcessable("https://cdn.example.com/v.mp4", page, null), false, "cross-origin, no CORS");
     assert.strictEqual(audioProcessable("https://cdn.example.com/v.mp4", page, "anonymous"), true, "CORS-enabled element");
     assert.strictEqual(audioProcessable("", page, null), false, "nothing loaded yet");
+    assert.strictEqual(audioProcessable("", page, null, true), true, "stream attached as srcObject (worker MSE)");
     assert.strictEqual(audioProcessable("not a url", page, null), false);
 });
 
