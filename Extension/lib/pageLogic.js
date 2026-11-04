@@ -76,9 +76,13 @@
     }
 
     // Page leveler (AGC): gain in dB that brings a measured level to
-    // cfg.targetDb, at most cfg.maxBoostDb up and cfg.maxCutDb down
+    // cfg.targetDb. The levelling is at most cfg.maxBoostDb up and
+    // cfg.maxCutDb down from cfg.refDb (Config.ahk's level); the user's
+    // own step away from it (- / =) is added on top, so every step is heard
+    // even where the limits would have swallowed it.
     function agcGainDb(levelDb, cfg) {
-        return Math.max(-cfg.maxCutDb, Math.min(cfg.maxBoostDb, cfg.targetDb - levelDb));
+        const refDb = cfg.refDb ?? cfg.targetDb;
+        return Math.max(-cfg.maxCutDb, Math.min(cfg.maxBoostDb, refDb - levelDb)) + (cfg.targetDb - refDb);
     }
 
     // Page leveler level tracking for one video: measured over its first

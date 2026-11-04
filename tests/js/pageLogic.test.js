@@ -82,6 +82,14 @@ test("agcGainDb moves toward the target within the limits", () => {
     assert.strictEqual(agcGainDb(5, cfg), -18, "cut capped");
 });
 
+test("agcGainDb: a level stepped away from refDb is heard even past the limits", () => {
+    const cfg = { refDb: -20, maxBoostDb: 18, maxCutDb: 18 };
+    assert.strictEqual(agcGainDb(-20, { ...cfg, targetDb: -40 }), -20, "20 dB quieter");
+    assert.strictEqual(agcGainDb(5, { ...cfg, targetDb: -40 }), -38, "a loud video too, past maxCutDb");
+    assert.strictEqual(agcGainDb(5, { ...cfg, targetDb: -38 }), -36, "every step changes the gain");
+    assert.strictEqual(agcGainDb(-60, { ...cfg, targetDb: -10 }), 28, "louder on top of a capped boost");
+});
+
 // AGC level tracking: a fresh measurement settles fast; a long-running one is steady
 const cfg = { targetDb: -20, maxBoostDb: 18, maxCutDb: 18 };
 const TICK = 100;

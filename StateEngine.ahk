@@ -340,6 +340,7 @@ OnBridgeMessage(msg) {
 _SendVideoConfig() {
     global CONFIG, State
     leveler := CONFIG.PAGE_LEVELER.Clone()
+    leveler.refDb := CONFIG.PAGE_LEVELER.targetDb  ; the levelling's limits are measured from here
     leveler.targetDb := State.levelDb
     VideoEnv.bridgeSend({type: "config", sites: CONFIG.SITES, leveler: leveler})
 }
