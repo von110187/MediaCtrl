@@ -136,6 +136,15 @@ test("agcUpdate: a quiet video comes up after 0.7 s of sound", () => {
     assert.strictEqual(agcUpdate(agc, -36, cfg, TICK), 16, "then its full boost");
 });
 
+test("agcUpdate: a new video starting boosted keeps that boost while it's heard", () => {
+    const agc = agcNew();
+    agc.startDb = 6;
+    assert.strictEqual(agcUpdate(agc, -30, cfg, TICK), 6, "quiet: held at the boosted start, not dropped to 0 dB");
+    const loud = agcNew();
+    loud.startDb = 6;
+    assert.strictEqual(agcUpdate(loud, -10, cfg, TICK), -10, "loud: cut at once");
+});
+
 // while a new video settles its level is the power average of everything
 // heard so far, so one quiet gap or one loud blip early on doesn't swing the
 // gain (blocks from a Douyin trace: the old fast follower moved the gain by
@@ -284,10 +293,10 @@ test("agcAverage: starts at the first video, then moves slowly", () => {
 });
 
 // new videos start at the gain a typical video settles at
-test("agcStartDb: the average's gain, never a boost; Config startDb until learnt", () => {
+test("agcStartDb: the average's gain, a boost too; Config startDb until learnt", () => {
     const c = { ...cfg, targetDb: -28, startDb: -9 };
     assert.strictEqual(agcStartDb(null, c), -9, "nothing learnt yet");
     assert.strictEqual(agcStartDb(-16, c), -12, "target -28, typical -16");
-    assert.strictEqual(agcStartDb(-35, c), 0, "a quiet feed starts unboosted");
+    assert.strictEqual(agcStartDb(-35, c), 7, "a quiet feed starts boosted");
     assert.strictEqual(agcStartDb(0, c), -18, "within maxCutDb");
 });

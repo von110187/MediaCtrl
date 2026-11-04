@@ -105,7 +105,7 @@
     //     as a LUFS meter integrates — a gap or a blip barely moves it, and
     //     loud blocks weigh most, so it errs towards turning down. Until
     //     AGC_NO_BOOST_MS of it the gain never rises above where it started
-    //     (agc.startDb, set by the caller: agcStartDb; never above 0 dB):
+    //     (agc.startDb, set by the caller: agcStartDb):
     //     many clips open with a fade-in, and opening the gain for it would
     //     play the real sound right after it too loud. A remembered level
     //     being re-checked (agc.checking, agcSwitch) isn't boosted at all;
@@ -137,7 +137,7 @@
         }
         const gainDb = agcGainDb(agc.levelDb, cfg);
         const noBoost = measuring && (agc.checking || agc.blocks * dtMs < AGC_NO_BOOST_MS);
-        return noBoost ? Math.min(gainDb, 0, agc.startDb ?? 0) : gainDb;
+        return noBoost ? Math.min(gainDb, agc.startDb ?? 0) : gainDb;
     }
 
     const AGC_AVERAGE_OF = 20;   // the Douyin average follows about this many videos
@@ -151,12 +151,11 @@
     }
 
     // Where every new video starts, in dB: the gain a typical video (the
-    // average) settles at, so most start where they end up. Never a boost —
-    // a quiet one comes up once heard (agcUpdate). No average yet:
-    // cfg.startDb.
+    // average) settles at, so most start where they end up — a boost too,
+    // when the target is above the average. No average yet: cfg.startDb.
     function agcStartDb(avgDb, cfg) {
         if (avgDb === null || avgDb === undefined) return cfg.startDb;
-        return Math.round(Math.min(0, agcGainDb(avgDb, cfg)) * 10) / 10;
+        return Math.round(agcGainDb(avgDb, cfg) * 10) / 10;
     }
 
     // Which video is this, for the page leveler's memory? A plain URL is the
