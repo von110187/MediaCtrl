@@ -82,6 +82,26 @@ Test_manual_exit_survives_tab_switch() {
     Assert(a.enter == false)
 }
 
+; another tab on a matched site with no video (Bilibili home, search…)
+; mustn't forget the manual exit on the video tab
+Test_manual_exit_survives_tab_switch_to_videoless_site_page() {
+    s := Decide.New()
+    Decide.OnUnrequestedExit(s, false, "p1")
+    Loop 5
+        Decide.Evaluate(s, With({playable: false, playing: false, pageId: "home"}), true)
+    a := Decide.Evaluate(s, Base(), true)
+    Assert(a.enter == false)
+}
+
+; ...nor another tab with a paused video
+Test_manual_exit_survives_tab_switch_to_paused_video() {
+    s := Decide.New()
+    Decide.OnUnrequestedExit(s, false, "p1")
+    Decide.Evaluate(s, With({playing: false, pageId: "p2"}), true)
+    a := Decide.Evaluate(s, Base(), true)
+    Assert(a.enter == false)
+}
+
 Test_manual_exit_only_for_that_page() {
     s := Decide.New()
     Decide.OnUnrequestedExit(s, false, "p1")
@@ -150,6 +170,7 @@ Test_disconnected_outside_chrome_keys_off() {
 TESTS.Push(Test_enter_when_ready_and_playing, Test_no_enter_until_ready, Test_no_enter_while_entering
     , Test_manual_exit_blocks_reentry, Test_page_change_exit_allows_reentry, Test_paused_in_fullscreen_keeps_keys
     , Test_stopped_not_fullscreen_clears_manual, Test_switch_app_keeps_fullscreen, Test_manual_exit_survives_app_switch
-    , Test_manual_exit_survives_tab_switch, Test_manual_exit_only_for_that_page, Test_leave_page_needs_three_ticks
+    , Test_manual_exit_survives_tab_switch, Test_manual_exit_survives_tab_switch_to_videoless_site_page
+    , Test_manual_exit_survives_tab_switch_to_paused_video, Test_manual_exit_only_for_that_page, Test_leave_page_needs_three_ticks
     , Test_never_playable_page_keeps_manual_fullscreen, Test_monitor_off_disables_all, Test_editable_focus_turns_keys_off, Test_disconnected_freezes
     , Test_disconnected_turns_keys_off, Test_disconnected_outside_chrome_keys_off)

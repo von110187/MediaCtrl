@@ -52,7 +52,7 @@ class Decide {
         if !inp.playable {
             if state.notPlayableTicks < Decide.MISS_TICKS
                 return Decide._Result(state, false, false, state.lastKeys)
-            state.manualExit := false
+            Decide._ClearManualExit(state, inp.pageId)
             left := state.playablePage != "" && state.playablePage == inp.pageId
             return Decide._Result(state, false, left && inp.fs == "fullscreen", false)
         }
@@ -76,8 +76,15 @@ class Decide {
 
         ; stopped and not fullscreen — done
         if inp.fs == "normal"
-            state.manualExit := false
+            Decide._ClearManualExit(state, inp.pageId)
         return Decide._Result(state, false, false, false)
+    }
+
+    ; the manual exit ends only on its own page (video stopped / gone there) —
+    ; another tab passing through, paused or videoless, doesn't end it
+    static _ClearManualExit(state, pageId) {
+        if state.manualExitPage == pageId
+            state.manualExit := false
     }
 
     ; a fullscreen exit the script didn't request counts as manual,
